@@ -14,6 +14,10 @@
 
 generator client {
   provider = "prisma-client-js"
+  // driverAdapters lets production swap the default SQLite-file connector for the
+  // Turso (libSQL) adapter over the network — see src/db/client.ts. The datasource
+  // stays `sqlite`, so local dev and the test harness are unaffected.
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
