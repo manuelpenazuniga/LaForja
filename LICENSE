@@ -1,0 +1,95 @@
+LA FORJA — LICENSING
+====================
+
+This repository is licensed in two parts. Read both.
+
+  1. ITEM CONTENT  -> Creative Commons Attribution 4.0 International (CC BY 4.0)
+  2. SOFTWARE      -> MIT License
+
+Copyright (c) 2026 Manuel Peña Zúñiga (LA FORJA)
+
+
+-------------------------------------------------------------------------------
+1. ITEM CONTENT — CC BY 4.0
+-------------------------------------------------------------------------------
+
+Scope. The CC BY 4.0 license applies to the **original, team-authored exam item
+content** in this repository, and to nothing else:
+
+  - src/eval/smoke/dev/*.json      (labeled smoke set, dev split)
+  - src/eval/smoke/holdout/*.json  (labeled smoke set, holdout split)
+  - the seeded demo item in prisma/seed.ts
+
+Each of those fixture files carries its own `_license` and `_attribution` fields.
+Those per-file headers are authoritative for the file that contains them.
+
+License text. The full legal code is published at:
+
+  https://creativecommons.org/licenses/by/4.0/legalcode
+
+and the human-readable summary at:
+
+  https://creativecommons.org/licenses/by/4.0/
+
+The canonical text at the first URL governs. In short: you may share and adapt
+this item content for any purpose, including commercially, provided you give
+appropriate credit, link to the license, and indicate whether changes were made.
+
+Attribution line. When reusing the item content, credit it as:
+
+  "LA FORJA item content by Manuel Peña Zúñiga (LA FORJA), licensed under
+   CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/"
+
+Provenance and exclusions — these are hard rules, not preferences:
+
+  - ZERO DEMRE CONTENT. No official PAES item, passage, figure or answer key
+    appears in this repository, in whole or in part. Every item here was written
+    by the team for this project.
+  - Official taxonomy is REFERENCED BY LABEL WITH ATTRIBUTION ONLY. Axis and
+    skill labels are cited to name what an item targets. No taxonomy text is
+    republished. Attribution is not a substitute for a license, which is exactly
+    why nothing is reproduced — only referenced.
+  - CONTRIBUTOR CONTENT IS NOT COVERED. Items authored by testers or visitors of
+    the public demo are private and ephemeral. They are never published and are
+    never placed under this or any other license. No claim is made about the
+    licensing of a future shared item bank.
+
+
+-------------------------------------------------------------------------------
+2. SOFTWARE — MIT License
+-------------------------------------------------------------------------------
+
+Scope. The MIT License applies to all source code, configuration, schemas,
+scripts, tests and documentation in this repository — everything not listed as
+item content in section 1 above.
+
+MIT License
+
+Copyright (c) 2026 Manuel Peña Zúñiga
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+-------------------------------------------------------------------------------
+3. IF THE TWO SECTIONS EVER CONFLICT
+-------------------------------------------------------------------------------
+
+For a given file, the more specific statement wins: a `_license` header inside a
+fixture governs that fixture; otherwise section 1 governs the paths it lists and
+section 2 governs everything else.

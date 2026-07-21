@@ -1,0 +1,15 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "id": "clean-004",
+  "author_labeled": true,
+  "split": "holdout",
+  "category": "clean",
+  "discipline": "probability",
+  "stem": "Se extrae una carta al azar de una baraja inglesa de 52 cartas. ¿Cuál es la probabilidad de que la carta extraída sea un as o sea de trébol?",
+  "options": ["4/13", "17/52", "1/4", "1/13"],
+  "correct_key": "A",
+  "author_rationale": "Hay 4 ases y 13 tréboles, pero el as de trébol se cuenta en ambos conjuntos: 4 + 13 - 1 = 16 casos favorables, luego P = 16/52 = 4/13. Cada distractor corresponde a un error real: 17/52 olvida el principio de inclusión-exclusión y suma 4 + 13, 1/4 = 13/52 cuenta solo los tréboles, y 1/13 = 4/52 cuenta solo los ases.",
+  "intended_defect": null,
+  "source": null
+}

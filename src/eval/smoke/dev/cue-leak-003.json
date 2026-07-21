@@ -1,0 +1,24 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "id": "cue-leak-003",
+  "author_labeled": true,
+  "split": "dev",
+  "category": "cue_leak",
+  "discipline": "probability",
+  "stem": "¿Qué condición deben cumplir dos eventos A y B para que se verifique la igualdad P(A y B) = P(A) · P(B)?",
+  "options": [
+    "Que sean mutuamente excluyentes",
+    "Que los eventos A y B sean independientes, es decir, que la ocurrencia de uno no modifique la probabilidad de ocurrencia del otro",
+    "Que sumen 1",
+    "Que sean iguales"
+  ],
+  "correct_key": "B",
+  "author_rationale": "La igualdad P(A ∩ B) = P(A)·P(B) es precisamente la definición de independencia. El autor no notó que la alternativa correcta es mucho más larga que las demás y que reutiliza los términos 'eventos A y B' del enunciado.",
+  "intended_defect": {
+    "type": "cue_leak",
+    "description": "Doble fuga determinista: la alternativa correcta duplica en extensión a la media de las alternativas y repite el vocabulario del enunciado ('eventos A y B', 'probabilidad'). Además 'Que sumen 1' y 'Que sean iguales' son distractores vagos que no corresponden a un error conceptual identificable.",
+    "expected_finding": "item_probe debe levantar answer_length_flag (ratio sobre LENGTH_HIGH) y lexical_overlap_flag (solapamiento enunciado↔respuesta sobre OVERLAP_HIGH). El revisor de distractores debe señalar que solo 'mutuamente excluyentes' captura un error conceptual real (confundir independencia con exclusión mutua); los otros dos son relleno."
+  },
+  "source": null
+}

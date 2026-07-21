@@ -1,0 +1,19 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "id": "ambiguous-001",
+  "author_labeled": true,
+  "split": "dev",
+  "category": "ambiguous",
+  "discipline": "probability",
+  "stem": "Se lanzan dos dados justos de seis caras. ¿Cuál es la probabilidad de que salga un 6?",
+  "options": ["11/36", "10/36", "1/6", "1/3"],
+  "correct_key": "A",
+  "author_rationale": "El autor pensó en 'al menos un 6': 36 resultados, 11 favorables, P = 11/36.",
+  "intended_defect": {
+    "type": "ambiguity",
+    "description": "La frase 'que salga un 6' admite al menos dos lecturas razonables: 'al menos un 6' y 'exactamente un 6'. El enunciado no desambigua.",
+    "expected_finding": "Interpretación A = 'al menos un 6' → 11/36. Interpretación B = 'exactamente un 6' → 10/36. Las respuestas difieren, por lo que el ataque de ambigüedad es válido."
+  },
+  "source": null
+}

@@ -1,0 +1,280 @@
+// LA FORJA — data model (SQLite via Prisma).
+//
+// Conventions (see CLAUDE.md):
+//  - JSON columns are stringified (suffix `Json`) + Zod-parsed at the boundary.
+//    SQLite/Prisma `Json` support is version-fragile; String keeps it portable.
+//  - State/class/verdict are String columns; allowed values live in src/core/types.ts
+//    (the single source of truth) and are enforced with Zod. No native enums: SQLite
+//    does not support them.
+//  - Published ItemVersions are immutable (`immutable=true`); a repair is a NEW
+//    version, never a mutation (doc §5).
+//  - Foreign keys are real relations, not bare id strings: the invariants below
+//    ("the full history ran", "this passport belongs to this version", "every model
+//    call is traceable") must be *provable* from the data, not inferred.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Demo isolation (doc §10): one session per visitor, auto-reset, zero PII.
+model Session {
+  id        String   @id @default(cuid())
+  pseudonym String // random pseudonym (doc §6.4); no school/city, no PII
+  createdAt DateTime @default(now())
+  expiresAt DateTime // auto-reset window
+  items     Item[]
+
+  @@index([expiresAt]) // session reaping sweeps by expiry
+}
+
+// Logical challenge unit. Its versions carry the actual content.
+model Item {
+  id         String  @id @default(cuid())
+  sessionId  String
+  session    Session @relation(fields: [sessionId], references: [id])
+  discipline String // MVP: "probability" ONLY (doc §7.2). Kept a String (no SQLite
+  // enums); the allowed value is defined in src/core/types.ts and
+  // validated with Zod at the boundary.
+  provenance String // team-authored note (doc §9)
+
+  // Doc §9 publication rules. ONLY team-authored items are published under CC-BY;
+  // tester/visitor contributions are private or ephemeral and are NEVER published.
+  // Hence the non-committal license default: a visitor item must not silently
+  // inherit CC-BY just by existing. Reaching state PUBLISHED requires
+  // publicationEligible === true.
+  license             String  @default("unlicensed-ephemeral")
+  isTeamAuthored      Boolean @default(false)
+  publicationEligible Boolean @default(false)
+
+  isDemo Boolean @default(false) // "Load demo challenge" (doc §4)
+  state  String  @default("DRAFT") // ItemState (src/core/types.ts)
+
+  // Pointer to the latest version. Named relation because Item and ItemVersion are
+  // connected twice (versions + currentVersion) and Prisma requires disambiguation.
+  currentVersionId String?      @unique
+  currentVersion   ItemVersion? @relation("ItemCurrentVersion", fields: [currentVersionId], references: [id])
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  versions     ItemVersion[] @relation("ItemVersions")
+  gauntletRuns GauntletRun[]
+  // One frozen passport per PUBLISHED version: a DISPUTED -> v2 -> republish cycle
+  // stamps a second passport instead of mutating the first (see Passport).
+  passports    Passport[]
+}
+
+// Immutable snapshot of item content. Repair = new version (doc §5).
+model ItemVersion {
+  id              String  @id @default(cuid())
+  itemId          String
+  item            Item    @relation("ItemVersions", fields: [itemId], references: [id])
+  versionNumber   Int // 1, 2, ...
+  stem            String // UNTRUSTED input (hard constraint 1) — always delimited in prompts
+  optionsJson     String // JSON string[] of alternatives
+  correctKey      String // e.g. "B"
+  authorRationale String
+
+  // Diff base is RECORDED, not inferred from versionNumber arithmetic: diffJson is
+  // the diff of this version against `previousVersion`.
+  diffJson          String? // JSON diff vs previous version
+  previousVersionId String?
+  previousVersion   ItemVersion?  @relation("VersionLineage", fields: [previousVersionId], references: [id])
+  nextVersions      ItemVersion[] @relation("VersionLineage")
+
+  immutable Boolean  @default(false) // true once PUBLISHED
+  createdAt DateTime @default(now())
+
+  checks           Check[]
+  historyReRuns    HistoryReRun[]
+  historyRunBatch  HistoryRunBatch[]
+  defense          Defense?
+  gauntletRuns     GauntletRun[]
+  passports        Passport[]
+  modelCalls       ModelCall[]
+  currentOfItem    Item?             @relation("ItemCurrentVersion")
+
+  @@unique([itemId, versionNumber])
+}
+
+// One orchestration pass over a version: 3 reviewers + adjudication (doc §7.1).
+// The run — not the item — owns `config` and `compliance` because the eval runs
+// three configs over the same version (doc §8).
+model GauntletRun {
+  id            String      @id @default(cuid())
+  itemId        String
+  item          Item        @relation(fields: [itemId], references: [id])
+  itemVersionId String
+  itemVersion   ItemVersion @relation(fields: [itemVersionId], references: [id])
+
+  // Canonical config values (doc §8, EvalConfig in src/core/types.ts):
+  //   "general-reviewer" | "gauntlet" | "gauntlet-no-adjudication"
+  config String
+
+  // Doc §8 requires 3 runs per configuration with identical settings. The batch id
+  // + repetition index make the three repetitions explicitly identifiable instead
+  // of being inferred from timestamps.
+  evalBatchId String?
+  runIndex    Int? // 0-based repetition within evalBatchId
+
+  adjudicationState String? // resulting state / abstain (doc §6.2)
+  compliance        Boolean     @default(false) // gpt-5.6 guard result
+  startedAt         DateTime    @default(now())
+  completedAt       DateTime?
+  checks            Check[]
+  modelCalls        ModelCall[]
+
+  @@index([itemVersionId, config])
+  @@index([evalBatchId])
+}
+
+// Every reviewer/probe finding is a class-tagged check (doc §5).
+model Check {
+  id            String         @id @default(cuid())
+  itemVersionId String
+  itemVersion   ItemVersion    @relation(fields: [itemVersionId], references: [id])
+  gauntletRunId String?
+  gauntletRun   GauntletRun?   @relation(fields: [gauntletRunId], references: [id])
+  reviewerType  String // ambiguity | discipline | distractor | item_probe
+  checkClass    String // deterministic | counterexample | semantic
+  status        String         @default("proposed") // proposed|accepted|rejected|abstained|hypothesis
+  schemaValid   Boolean        @default(false)
+  contractJson  String // JSON evidence-contract payload (per reviewer, doc §6.2)
+  citationId    String? // discipline findings only
+  citation      Citation?      @relation(fields: [citationId], references: [id])
+  createdAt     DateTime       @default(now())
+  reRuns        HistoryReRun[] @relation("CheckReRuns")
+
+  @@index([itemVersionId, status])
+  @@index([gauntletRunId])
+}
+
+// Full citation required for a discipline "correct" verdict (doc §6.2).
+model Citation {
+  id          String  @id @default(cuid())
+  sourceId    String
+  versionDate String
+  license     String
+  excerpt     String
+  relevance   String
+  checks      Check[]
+}
+
+// Parent record of one full history re-run over a NEW version (doc §5).
+//
+// This is what makes "the FULL history ran" PROVABLE rather than asserted:
+// expectedCheckCount is the number of prior checks that must be re-executed,
+// completedCheckCount is how many HistoryReRun rows actually landed, and the two
+// must agree for `status` to be "complete".
+//
+// GATE: HISTORY_CLEAN may only be dispatched when the batch is complete
+// (doc §5, recording gate question 3). While `blocksPublish` is true the item
+// cannot advance towards PUBLISHED.
+model HistoryRunBatch {
+  id            String      @id @default(cuid())
+  itemVersionId String // the NEW version being validated
+  itemVersion   ItemVersion @relation(fields: [itemVersionId], references: [id])
+
+  expectedCheckCount  Int
+  completedCheckCount Int     @default(0)
+  status              String  @default("incomplete") // complete | incomplete | failed
+  blocksPublish       Boolean @default(true)
+
+  startedAt   DateTime       @default(now())
+  completedAt DateTime?
+  reRuns      HistoryReRun[]
+
+  @@index([itemVersionId, status])
+}
+
+// Re-execution of a prior check on a NEW version (doc §5). Every repair re-runs
+// the FULL history before publication.
+model HistoryReRun {
+  id              String          @id @default(cuid())
+  batchId         String
+  batch           HistoryRunBatch @relation(fields: [batchId], references: [id])
+  itemVersionId   String // the NEW version being validated
+  itemVersion     ItemVersion     @relation(fields: [itemVersionId], references: [id])
+  originalCheckId String
+  originalCheck   Check           @relation("CheckReRuns", fields: [originalCheckId], references: [id])
+  checkClass      String
+  result          String // pass | regressed | readjudicated | inconclusive
+  detailsJson     String?
+  createdAt       DateTime        @default(now())
+
+  // Each prior check is re-run EXACTLY once per new version. Without this,
+  // duplicate rows would make the "full history ran" count unverifiable.
+  @@unique([itemVersionId, originalCheckId])
+  @@index([originalCheckId])
+}
+
+// Written viva (doc §6.3): 2 adaptive questions, rubric = 3 dims × scale 0-2.
+model Defense {
+  id            String      @id @default(cuid())
+  itemVersionId String      @unique
+  itemVersion   ItemVersion @relation(fields: [itemVersionId], references: [id])
+  questionsJson String // JSON: 2 adaptive questions
+  answersJson   String? // JSON: student answers
+  rubricJson    String? // JSON: 3 dims × {score 0-2, evidence}
+  totalScore    Int? // 0-6
+  outcome       String      @default("pending") // passed | failed | inconclusive | pending
+  createdAt     DateTime    @default(now())
+  modelCalls    ModelCall[]
+}
+
+// Per-call telemetry (hard constraint 3 + compliance evidence).
+//
+// EVERY call must be traceable to what produced it. Orchestrator/adjudication
+// calls hang off a GauntletRun; viva calls hang off a Defense; anything else
+// still records the ItemVersion it was made about. A row with all three null is
+// an orphan and fails the audit.
+model ModelCall {
+  id            String       @id @default(cuid())
+  gauntletRunId String?
+  gauntletRun   GauntletRun? @relation(fields: [gauntletRunId], references: [id])
+  itemVersionId String?
+  itemVersion   ItemVersion? @relation(fields: [itemVersionId], references: [id])
+  defenseId     String?
+  defense       Defense?     @relation(fields: [defenseId], references: [id])
+
+  callSite      String // orchestrator | adjudication | viva
+  reviewerType  String?
+  modelId       String // EXACT model id (compliance evidence)
+  modelFamilyOk Boolean  @default(false) // starts with "gpt-5.6"
+  promptVersion String
+  promptHash    String
+  latencyMs     Int
+  tokensIn      Int?
+  tokensOut     Int?
+  costUsd       Float?
+  schemaValid   Boolean  @default(false)
+  rawJson       String? // raw model output (kept as evidence)
+  createdAt     DateTime @default(now())
+
+  @@index([gauntletRunId])
+  @@index([itemVersionId])
+  @@index([defenseId])
+}
+
+// Publish snapshot (doc §6.4). Frozen at publish time and NEVER mutated.
+//
+// Scoped to (item, version) rather than to the item alone: after a
+// DISPUTED -> v2 cycle the item is republished, and that republication gets its
+// OWN frozen passport. Overwriting the v1 snapshot would break the freeze.
+model Passport {
+  id            String      @id @default(cuid())
+  itemId        String
+  item          Item        @relation(fields: [itemId], references: [id])
+  itemVersionId String
+  itemVersion   ItemVersion @relation(fields: [itemVersionId], references: [id])
+  // The snapshot's `discipline` lives inside snapshotJson and is MVP-restricted to
+  // "probability" (doc §7.2); it is Zod-validated at the boundary, not by SQLite.
+  snapshotJson  String // full frozen passport (provenance, checks, citations, rubric, versions)
+  publishedAt   DateTime    @default(now())
+
+  @@unique([itemId, itemVersionId])
+}

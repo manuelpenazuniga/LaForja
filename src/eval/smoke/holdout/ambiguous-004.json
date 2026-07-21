@@ -1,0 +1,19 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "id": "ambiguous-004",
+  "author_labeled": true,
+  "split": "holdout",
+  "category": "ambiguous",
+  "discipline": "probability",
+  "stem": "En una panadería, la probabilidad de que un cliente cualquiera compre pan es 0,7, de forma independiente de los demás clientes. Si entran tres clientes, ¿cuál es la probabilidad de que compren pan?",
+  "options": ["0,343", "0,973", "0,7", "0,9"],
+  "correct_key": "A",
+  "author_rationale": "El autor pensó en 'los tres compran pan': 0,7 · 0,7 · 0,7 = 0,343.",
+  "intended_defect": {
+    "type": "ambiguity",
+    "description": "La frase 'que compren pan' no precisa el cuantificador: puede leerse como 'que los tres compren pan' o como 'que al menos uno compre pan'. Ambas lecturas son razonables para el sujeto plural 'tres clientes'.",
+    "expected_finding": "Interpretación A = los tres compran → 0,7³ = 0,343. Interpretación B = al menos uno compra → 1 - 0,3³ = 1 - 0,027 = 0,973. Las respuestas difieren, por lo que el ataque de ambigüedad es válido."
+  },
+  "source": null
+}

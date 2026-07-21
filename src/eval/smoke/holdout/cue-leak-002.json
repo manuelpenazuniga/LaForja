@@ -1,0 +1,19 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "id": "cue-leak-002",
+  "author_labeled": true,
+  "split": "holdout",
+  "category": "cue_leak",
+  "discipline": "probability",
+  "stem": "Si la probabilidad de un evento A es P(A) = 0,3, ¿cuál es la probabilidad del evento complementario?",
+  "options": ["0,7", "3", "-0,3", "1,3"],
+  "correct_key": "A",
+  "author_rationale": "P(A^c) = 1 - P(A) = 0,7. El autor no notó que las tres alternativas incorrectas quedan fuera del intervalo [0,1], de modo que se descartan sin usar el concepto de complemento.",
+  "intended_defect": {
+    "type": "weak_distractor",
+    "description": "Los tres distractores (3, -0,3 y 1,3) son valores imposibles para una probabilidad. Un estudiante puede acertar por eliminación aritmética sin entender el complemento, así que el ítem no discrimina.",
+    "expected_finding": "El revisor de distractores debe reportar que ninguno de los tres distractores captura un error conceptual plausible sobre el complemento, ya que todos violan 0 ≤ P ≤ 1. Un distractor plausible sería 0,3 (confundir el evento con su complemento)."
+  },
+  "source": null
+}

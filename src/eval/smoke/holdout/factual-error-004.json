@@ -1,0 +1,26 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "id": "factual-error-004",
+  "author_labeled": true,
+  "split": "holdout",
+  "category": "factual_error",
+  "discipline": "probability",
+  "stem": "Una urna contiene 5 bolas rojas y 3 bolas verdes. Se extrae una bola, se anota su color y se devuelve a la urna. Luego se extrae una segunda bola. ¿Cuál es la probabilidad de que ambas extracciones sean verdes?",
+  "options": ["3/28", "9/64", "6/64", "1/4"],
+  "correct_key": "A",
+  "author_rationale": "El autor marcó 3/28 calculando (3/8)·(2/7), es decir tratando la segunda extracción sobre un conjunto reducido. Eso contradice el enunciado, que dice explícitamente que la bola SE DEVUELVE a la urna.",
+  "intended_defect": {
+    "type": "factual_error",
+    "description": "La clave marcada (3/28) aplica muestreo sin reposición pese a que el enunciado establece reposición. Con reposición las dos extracciones son independientes y la composición de la urna no cambia.",
+    "expected_finding": "El verificador acotado debe calcular (3/8)·(3/8) = 9/64, contradiciendo la clave marcada. Este ítem es el espejo de factual-error-002: allí el autor aplicó reposición donde no correspondía, aquí omite la reposición que sí se declara.",
+    "true_answer": "9/64"
+  },
+  "source": {
+    "source_id": "forja-corpus/independence-and-replacement",
+    "version_date": "2025-07-18",
+    "license": "CC-BY-4.0",
+    "excerpt": "Cuando una extracción se realiza con reposición, la composición del conjunto se restaura antes de la siguiente extracción y los eventos resultantes son independientes: P(A₁ ∩ A₂) = P(A₁) · P(A₂), con ambos factores calculados sobre el mismo conjunto original.",
+    "relevance": "Establece que ambos factores deben evaluarse sobre las 8 bolas originales, que es exactamente el paso que el autor sustituyó por un conjunto reducido."
+  }
+}

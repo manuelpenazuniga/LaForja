@@ -1,0 +1,19 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "id": "ambiguous-002",
+  "author_labeled": true,
+  "split": "holdout",
+  "category": "ambiguous",
+  "discipline": "probability",
+  "stem": "De una baraja inglesa de 52 cartas se extraen dos cartas. ¿Cuál es la probabilidad de que ambas sean de corazones?",
+  "options": ["1/17", "1/16", "1/4", "25/102"],
+  "correct_key": "A",
+  "author_rationale": "El autor asumió extracción sin reposición: (13/52)·(12/51) = 1/17.",
+  "intended_defect": {
+    "type": "ambiguity",
+    "description": "El enunciado no declara si la extracción es con o sin reposición, y ambas lecturas son razonables para 'se extraen dos cartas'.",
+    "expected_finding": "Interpretación A = sin reposición → (13/52)·(12/51) = 1/17. Interpretación B = con reposición → (13/52)² = 1/16. Las respuestas difieren, por lo que el ataque de ambigüedad es válido."
+  },
+  "source": null
+}

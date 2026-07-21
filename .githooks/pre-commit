@@ -1,0 +1,33 @@
+#!/bin/sh
+#
+# LA FORJA — pre-commit secret scan (hard constraint 5: no secrets in the repo,
+# nothing in the client bundle; only .env.example is versioned).
+#
+# WIRING: this hook is not in .git/hooks. The package.json "prepare" script runs
+#   git config core.hooksPath .githooks
+# on every `npm install`, which points git at this directory. To wire it by hand:
+#   git config core.hooksPath .githooks
+#
+# The scanner defaults to STAGED files only, so this stays fast. CI runs the same
+# script with --all over the tracked tree.
+#
+# Bypass (use only when you are certain the match is a false positive, and fix
+# the rule in scripts/secret-scan.mjs afterwards):
+#   git commit --no-verify
+
+set -e
+
+if ! command -v node >/dev/null 2>&1; then
+  printf '\npre-commit: node not found on PATH — cannot run the secret scan.\n' >&2
+  printf 'Install Node 20+ or bypass deliberately with `git commit --no-verify`.\n\n' >&2
+  exit 1
+fi
+
+if ! node scripts/secret-scan.mjs; then
+  printf 'COMMIT ABORTED — the secret scan found a potential credential.\n' >&2
+  printf 'Remove and rotate it, keep real values in .env.local (git-ignored),\n' >&2
+  printf 'then stage the fix and commit again.\n\n' >&2
+  exit 1
+fi
+
+exit 0

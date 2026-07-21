@@ -1,0 +1,274 @@
+/**
+ * LA FORJA — check taxonomy + history re-run engine (doc §5).
+ *
+ * OWNER: Codex (internals). Claude owns the types, the signatures and the
+ * precision of the TODO(codex) specs in this file; the bodies are Codex's.
+ *
+ * Three check classes, three DIFFERENT promises — and only these three:
+ *  - deterministic  : STRICT non-regression. The recorded invariant is
+ *                     re-executed in code on every later version and must hold.
+ *  - counterexample : the recorded construction is RE-EXECUTED on the new
+ *                     version. While the construction still holds, the version
+ *                     does not publish. Deciding whether it still holds MAY
+ *                     require semantic adjudication (see below) — what is
+ *                     guaranteed is the EXECUTION and the BLOCKING, not a
+ *                     deterministic verdict.
+ *  - semantic       : RE-ADJUDICATED on every version; never an absolute
+ *                     guarantee; the new verdict is shown in the passport.
+ *
+ * Authorized guarantee text (doc §5) — the ONLY wording the project may use,
+ * and nothing in this file may claim more than it does:
+ *  "Every repair re-runs all recorded counterexamples and checks. The system
+ *   guarantees history execution and the non-regression of deterministic
+ *   invariants; semantic judgments are re-adjudicated and shown in the passport."
+ *
+ * FAIL-CLOSED RULE (the reason blocksPublish is modelled per outcome): an
+ * INCONCLUSIVE re-run of a deterministic or counterexample check BLOCKS
+ * publication. "We could not verify it" is never treated as "it passed".
+ */
+import type { CheckClass, ReviewerType } from './types';
+
+// ---------------------------------------------------------------------------
+// How a check is verified. Reviewer type ALONE cannot determine the class:
+// the discipline reviewer produces a solver-grounded numeric verdict (which is
+// deterministic and re-executable) AND a source-grounded conceptual verdict
+// (which is a semantic judgment). The pair (reviewerType, verificationKind) is
+// what fixes the class.
+// ---------------------------------------------------------------------------
+export const VERIFICATION_KINDS = [
+  'solver', // recomputed by the bounded solver (src/solver) — reproducible
+  'citation', // grounded on a licensed source excerpt — judged, not computed
+  'heuristic', // fixed-threshold code check (src/probe) — reproducible
+  'interpretation', // a natural-language reading applied to the stem — judged
+] as const;
+export type VerificationKind = (typeof VERIFICATION_KINDS)[number];
+
+/**
+ * The (reviewerType, verificationKind) -> CheckClass assignment, encoded ONCE.
+ * `null` marks a combination that is not legal: a recorded check with a null
+ * entry is a recording bug and must be rejected at persistence time, never
+ * silently downgraded to 'semantic'.
+ *
+ * Reference: doc §5 (the three-class table).
+ */
+export const CHECK_CLASS_BY_VERIFICATION: Readonly<
+  Record<ReviewerType, Readonly<Record<VerificationKind, CheckClass | null>>>
+> = {
+  ambiguity: {
+    solver: null, // the ambiguity reviewer never calls the solver directly
+    citation: null,
+    heuristic: null,
+    interpretation: 'counterexample', // two readings ⇒ two answers, re-executable
+  },
+  discipline: {
+    solver: 'deterministic', // recomputed answer vs marked key — strict non-regression
+    citation: 'semantic', // source-grounded conceptual verdict — re-adjudicated
+    heuristic: null,
+    interpretation: null,
+  },
+  distractor: {
+    solver: null,
+    citation: 'semantic', // evidenced plausibility is still a judgment
+    heuristic: null,
+    interpretation: 'semantic', // hypothesized student error — judgment
+  },
+  item_probe: {
+    solver: null,
+    citation: null,
+    heuristic: 'deterministic', // fixed thresholds, recomputed in code (doc §7.3)
+    interpretation: null,
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// Recorded checks
+// ---------------------------------------------------------------------------
+
+interface RecordedCheckBase {
+  id: string;
+  reviewerType: ReviewerType;
+  verificationKind: VerificationKind;
+  /** The evidence contract that was accepted on the earlier version. */
+  contract: unknown;
+}
+
+/**
+ * A check whose re-run is an EXECUTION, not a fresh opinion. These carry the
+ * identity needed to re-execute the SAME check on a later version; without
+ * these three fields "strict non-regression" is not verifiable, because there
+ * is no way to prove the thing re-run on v2 is the thing that failed on v1.
+ */
+export interface ExecutableRecordedCheck extends RecordedCheckBase {
+  checkClass: 'deterministic' | 'counterexample';
+  /**
+   * Stable identifier of the executable check itself (e.g.
+   * 'solver_key_matches', 'answer_length_flag'). Two checks with the same
+   * invariantId re-execute the same code path.
+   */
+  invariantId: string;
+  /** Version of the executor that produced the recorded result (solver/probe). */
+  executorVersion: string;
+  /** Version of the threshold table in force when the check was recorded. */
+  thresholdVersion: string;
+}
+
+/** A judgment. Re-adjudicated on every version; never a hard guarantee. */
+export interface SemanticRecordedCheck extends RecordedCheckBase {
+  checkClass: 'semantic';
+}
+
+export type RecordedCheck = ExecutableRecordedCheck | SemanticRecordedCheck;
+
+// ---------------------------------------------------------------------------
+// Re-run outcomes
+// ---------------------------------------------------------------------------
+
+export type ReRunResult = 'pass' | 'regressed' | 'readjudicated' | 'inconclusive';
+
+/** The structured verdict a semantic re-adjudication MUST produce (doc §6.4). */
+export interface ReadjudicatedVerdict {
+  /** upheld: still stands · withdrawn: no longer stands · modified: restated. */
+  status: 'upheld' | 'withdrawn' | 'modified';
+  /** Shown verbatim in the passport — never an empty string. */
+  rationale: string;
+  /** ISO-8601 instant of the re-adjudication. */
+  adjudicatedAt: string;
+}
+
+/**
+ * Outcome of re-running a deterministic or counterexample check.
+ * FAIL-CLOSED: `blocksPublish` is false ONLY when `result === 'pass'`.
+ * 'regressed' and 'inconclusive' both block.
+ */
+export interface ExecutableReRunOutcome {
+  originalCheckId: string;
+  checkClass: 'deterministic' | 'counterexample';
+  result: 'pass' | 'regressed' | 'inconclusive';
+  blocksPublish: boolean;
+  detail?: string;
+}
+
+/** A semantic check that was successfully re-adjudicated. Never blocks. */
+export interface SemanticReadjudicatedOutcome {
+  originalCheckId: string;
+  checkClass: 'semantic';
+  result: 'readjudicated';
+  /** REQUIRED: the passport displays this, not a free-text detail (doc §6.4). */
+  verdict: ReadjudicatedVerdict;
+  blocksPublish: false;
+  detail?: string;
+}
+
+/**
+ * A semantic check the adjudicator could not resolve. Still never blocks —
+ * the authorized guarantee text makes no promise about semantic judgments —
+ * but the passport must show that it was not resolved.
+ */
+export interface SemanticInconclusiveOutcome {
+  originalCheckId: string;
+  checkClass: 'semantic';
+  result: 'inconclusive';
+  blocksPublish: false;
+  detail?: string;
+}
+
+export type ReRunOutcome =
+  | ExecutableReRunOutcome
+  | SemanticReadjudicatedOutcome
+  | SemanticInconclusiveOutcome;
+
+/**
+ * One full history re-run against one target version. Per-check rows alone
+ * cannot distinguish "this item had no prior checks" from "the re-run crashed
+ * after two checks": both produce a short outcome list. This batch record is
+ * what makes "the full history ran" PROVABLE, and it is what answers doc §5
+ * and recording-gate question 3.
+ */
+export interface HistoryRunBatch {
+  /** The ItemVersion the history was re-run against. */
+  targetVersionId: string;
+  /** How many recorded checks the history contained when the batch started. */
+  expectedCheckCount: number;
+  /** How many produced an outcome. */
+  completedCheckCount: number;
+  /** ISO-8601. */
+  startedAt: string;
+  /** ISO-8601; null while the batch is still running or if it never finished. */
+  completedAt: string | null;
+  /**
+   * complete   : every expected check produced an outcome.
+   * incomplete : the batch ended with completedCheckCount < expectedCheckCount.
+   * failed     : the batch aborted (executor crash, timeout, storage error).
+   */
+  status: 'complete' | 'incomplete' | 'failed';
+  /** FAIL-CLOSED aggregate; see reRunHistory below. */
+  blocksPublish: boolean;
+  outcomes: ReRunOutcome[];
+}
+
+/**
+ * TODO(codex): implement history re-run for ONE recorded check against a new version.
+ *
+ *  - deterministic: re-execute the invariant identified by `invariantId` (via
+ *    src/solver or src/probe) at `executorVersion` / `thresholdVersion`. If the
+ *    failure reappears ⇒ 'regressed'. If the invariant holds ⇒ 'pass'. If the
+ *    executor cannot run (crash, timeout, unknown invariantId, executor or
+ *    threshold version no longer available) ⇒ 'inconclusive'.
+ *  - counterexample: re-execute the recorded construction (e.g. re-apply the
+ *    ambiguity's two interpretations to the repaired stem). If the construction
+ *    still holds — both readings still yield different answers ⇒ 'regressed'.
+ *    If it demonstrably no longer holds ⇒ 'pass'. If re-applying the readings
+ *    cannot be resolved ⇒ 'inconclusive'.
+ *    NOTE: re-applying two natural-language interpretations to a REPAIRED stem
+ *    generally requires semantic adjudication, so this re-run is NOT promised
+ *    to be bit-identical across runs. What §5 guarantees is that the recorded
+ *    construction is EXECUTED and that the version is BLOCKED while the
+ *    construction still holds — not that the adjudication is deterministic.
+ *    Only the deterministic class is golden-testable.
+ *  - semantic: re-adjudicate. On success ⇒ 'readjudicated' with a REQUIRED
+ *    structured `verdict` (never a hard 'pass', never a hard 'regressed'); the
+ *    passport renders `verdict`, not `detail` (doc §6.4). If the adjudicator
+ *    fails ⇒ 'inconclusive'. Semantic outcomes NEVER block publication.
+ *
+ * FAIL-CLOSED (mandatory): for the deterministic and counterexample classes set
+ * `blocksPublish = (result !== 'pass')`. Publication is blocked unless the
+ * re-run returns a CONCLUSIVE 'pass'. An inconclusive re-run must never fail
+ * open. Semantic outcomes always set `blocksPublish = false`.
+ *
+ * The class is NOT re-derived here: it is fixed at recording time by
+ * CHECK_CLASS_BY_VERIFICATION[reviewerType][verificationKind], and a check
+ * whose stored class disagrees with that map is a recording bug ⇒ reject it,
+ * do not re-run it.
+ *
+ * Reference: doc §5, gate §13.3 (the exact check that broke v1 and passes v2).
+ */
+export function reRunCheck(_check: RecordedCheck, _newVersion: unknown): ReRunOutcome {
+  throw new Error('TODO(codex): implement per-class history re-run');
+}
+
+/**
+ * TODO(codex): re-run the FULL history for a new version and summarize it as a
+ * HistoryRunBatch.
+ *
+ *  - Set `expectedCheckCount` from the recorded history BEFORE running anything,
+ *    and increment `completedCheckCount` per produced outcome. Stamp `startedAt`
+ *    before the first check and `completedAt` when the batch ends.
+ *  - `status` is 'complete' ONLY when completedCheckCount === expectedCheckCount
+ *    and every expected check id appears exactly once in `outcomes`. A batch that
+ *    aborted is 'failed'; one that simply produced fewer outcomes is 'incomplete'.
+ *  - FAIL-CLOSED aggregate: `blocksPublish` is true if ANY outcome has
+ *    blocksPublish true, OR status !== 'complete'. An empty recorded history
+ *    (expectedCheckCount === 0) is 'complete' and does not block.
+ *
+ * DISPATCH GATE (this is the point of the batch): the caller may dispatch the
+ * HISTORY_CLEAN state event ONLY when `status === 'complete'` AND every expected
+ * check produced an outcome AND `blocksPublish === false`. An 'incomplete' or
+ * 'failed' batch must never reach DEFENSE — it is indistinguishable from
+ * "nothing was checked", and that is exactly the failure §5 forbids.
+ *
+ * Reference: doc §5 ("cada reparación reejecuta todo el historial"),
+ * RECORDING_GATE.md question 3.
+ */
+export function reRunHistory(_history: RecordedCheck[], _newVersion: unknown): HistoryRunBatch {
+  throw new Error('TODO(codex): implement full-history re-run');
+}

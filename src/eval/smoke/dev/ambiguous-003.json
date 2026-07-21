@@ -1,0 +1,19 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "id": "ambiguous-003",
+  "author_labeled": true,
+  "split": "dev",
+  "category": "ambiguous",
+  "discipline": "probability",
+  "stem": "De una urna con 3 bolas rojas y 2 bolas azules se extraen dos bolas, una tras otra y sin reposición. ¿Cuál es la probabilidad de obtener una bola roja y una bola azul?",
+  "options": ["3/5", "3/10", "1/2", "2/5"],
+  "correct_key": "A",
+  "author_rationale": "El autor pensó en ambos órdenes posibles: P(roja luego azul) + P(azul luego roja) = (3/5)(2/4) + (2/5)(3/4) = 6/20 + 6/20 = 12/20 = 3/5.",
+  "intended_defect": {
+    "type": "ambiguity",
+    "description": "El enunciado no declara si el orden de extracción importa. 'Obtener una bola roja y una azul' admite tanto la lectura sin orden (cualquiera de las dos secuencias) como la lectura con orden implícito por la redacción secuencial 'una tras otra'.",
+    "expected_finding": "Interpretación A = el orden no importa → (3/5)(2/4) + (2/5)(3/4) = 3/5. Interpretación B = primero roja y después azul → (3/5)(2/4) = 3/10. Las respuestas difieren, por lo que el ataque de ambigüedad es válido."
+  },
+  "source": null
+}

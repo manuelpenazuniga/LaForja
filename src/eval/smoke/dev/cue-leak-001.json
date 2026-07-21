@@ -1,0 +1,24 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "id": "cue-leak-001",
+  "author_labeled": true,
+  "split": "dev",
+  "category": "cue_leak",
+  "discipline": "probability",
+  "stem": "En un experimento aleatorio con espacio muestral equiprobable, ¿qué expresa la probabilidad de un evento A?",
+  "options": [
+    "Es siempre 1/2",
+    "Es el cociente entre el número de casos favorables al evento A y el número total de casos posibles del espacio muestral equiprobable",
+    "Es un número negativo",
+    "Es el total de casos"
+  ],
+  "correct_key": "B",
+  "author_rationale": "La definición de Laplace. El autor no notó que la alternativa correcta es mucho más larga que las otras y repite casi literalmente el vocabulario del enunciado.",
+  "intended_defect": {
+    "type": "cue_leak",
+    "description": "Doble fuga determinista: (1) la alternativa correcta es notoriamente más larga que la media de las alternativas; (2) reutiliza los términos 'espacio muestral', 'equiprobable' y 'evento A' tomados del enunciado. Además, 'Es un número negativo' es un distractor implausible que nadie elegiría.",
+    "expected_finding": "item_probe debe levantar answer_length_flag (ratio por sobre LENGTH_HIGH) y lexical_overlap_flag (solapamiento enunciado↔respuesta por sobre OVERLAP_HIGH). El revisor de distractores debe marcar 'Es un número negativo' como distractor débil sin error conceptual plausible."
+  },
+  "source": null
+}

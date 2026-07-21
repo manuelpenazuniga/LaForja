@@ -1,0 +1,57 @@
+## LA FORJA — continuous integration.
+## Single fast job: typecheck + tests + secret scan. No deploy step.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, tests and secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      ## Prisma refuses to run without a datasource URL. SQLite file is enough
+      ## for `prisma generate`; CI never seeds or queries a real database.
+      DATABASE_URL: "file:./ci.db"
+      ## Model IDs are read from env only (never hardcoded in source).
+      ## These are the documented defaults; CI performs no model calls.
+      REVIEWER_MODEL: gpt-5.6-terra
+      ADJUDICATOR_MODEL: gpt-5.6-sol
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      ## REQUIRED before typecheck: src/db/client.ts imports the generated
+      ## @prisma/client, so `tsc --noEmit` fails if the client is missing.
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      ## CI mode: scan the whole tracked tree, not just a staged diff.
+      - name: Secret scan
+        run: npm run secretscan -- --all
