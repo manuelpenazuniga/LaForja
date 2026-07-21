@@ -5,7 +5,7 @@
  * × scale 0-2, each carrying textual evidence. Publish gate: total ≥ 4/6 AND no
  * dimension at 0.
  *
- * OWNER SPLIT (see CLAUDE.md):
+ * OWNER SPLIT:
  *  - `meetsPublishThreshold` is CLAUDE-owned and implemented. Its suite is NOT
  *    skipped and passes today.
  *  - `generateDefenseQuestions` / `scoreDefense` are CODEX-owned stubs. Their

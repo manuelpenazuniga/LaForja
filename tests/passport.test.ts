@@ -18,7 +18,7 @@
  *   · a snapshot that silently rewrites itself when an upstream row changes.
  * Every one of those produces a shape-valid passport and a false record.
  *
- * OWNER SPLIT (see CLAUDE.md): `buildPassport` is CODEX-owned. This suite drives
+ * OWNER SPLIT: `buildPassport` is CODEX-owned. This suite drives
  * the completed assembly through its injected dependencies.
  *
  * THE SEAM. Assembly reads the database, and a passport that can only be built

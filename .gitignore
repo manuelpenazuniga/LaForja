@@ -28,11 +28,17 @@ coverage/
 # os
 .DS_Store
 
+# Coding-assistant working conventions — NOT versioned by decision.
+# Tooling config, in the same family as .vscode/ or .idea/. It holds working
+# conventions, not project documentation. How this project was actually built is
+# described in README.md, which stays versioned and accurate.
+CLAUDE.md
+
 # Internal strategy docs — NOT versioned by decision.
 # docs/LA_FORJA_v6_final.md is the frozen source of truth but is kept local:
 # it contains internal deadlines, Devpost draft copy and jury analysis notes
-# that are not part of the public submission. Code comments and CLAUDE.md still
-# cite it by path for local work; clones will not have it.
+# that are not part of the public submission. Code comments still cite it by
+# path for local work; clones will not have it.
 docs/
 
 # NOTE: /eval/results/ IS versioned — it is evidence (doc §8, gate §13.4).

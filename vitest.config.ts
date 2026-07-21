@@ -11,7 +11,7 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.ts'],
     // Codex-owned suites are marked `.skip` with executable spec bodies until
-    // implemented (see CLAUDE.md "Claude/Codex split"). CI stays green; skipped
+    // implemented. CI stays green; skipped
     // tests double as the punch-list. Unskip as each stub is filled.
     passWithNoTests: false,
   },

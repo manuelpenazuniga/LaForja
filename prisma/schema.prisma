@@ -1,6 +1,6 @@
 // LA FORJA — data model (SQLite via Prisma).
 //
-// Conventions (see CLAUDE.md):
+// Conventions:
 //  - JSON columns are stringified (suffix `Json`) + Zod-parsed at the boundary.
 //    SQLite/Prisma `Json` support is version-fragile; String keeps it portable.
 //  - State/class/verdict are String columns; allowed values live in src/core/types.ts
