@@ -15,7 +15,7 @@ check history gets published — with an auditable passport.
 ![Models](https://img.shields.io/badge/runtime%20models-GPT--5.6%20only-black)
 ![License](https://img.shields.io/badge/license-MIT%20%2B%20CC--BY%204.0-orange)
 
-**[▶ Live demo](https://la-forja-edu.vercel.app)** · **[Demo video](#)** *(link pending)* · OpenAI Build Week — **Education track**
+**[▶ Live demo](https://la-forja-edu.vercel.app)** · **[🎬 Demo video](https://vimeo.com/1211846755)** · OpenAI Build Week — **Education track**
 
 </div>
 
