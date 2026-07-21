@@ -20,9 +20,10 @@
  *   v1 gauntlet → accepted counterexample → repair → v2 → history re-run →
  *   written defense → passport → PUBLISHED.
  */
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+// Use the shared, adapter-aware client (src/db/client.ts): with TURSO_DATABASE_URL
+// set it seeds the hosted Turso database, otherwise the local SQLite file. A bare
+// `new PrismaClient()` would ignore the Turso adapter and always hit the file.
+import { prisma } from '../src/db/client';
 
 // The ambiguity is load-bearing: "one of them is a boy" is genuinely open in
 // English between "at least one of the two is a boy" (⇒ 1/3) and a reference to
@@ -52,6 +53,14 @@ function randomPseudonym(): string {
 }
 
 async function main(): Promise<void> {
+  // Idempotent: a hosted database is seeded once and re-running must not stack
+  // duplicate demo items. If a demo item already exists, leave it as it is.
+  const existing = await prisma.item.findFirst({ where: { isDemo: true } });
+  if (existing) {
+    console.log(`Demo challenge already present: item=${existing.id} — skipping.`);
+    return;
+  }
+
   const ttlMinutes = Number(process.env.SESSION_TTL_MINUTES ?? 30);
 
   const session = await prisma.session.create({
