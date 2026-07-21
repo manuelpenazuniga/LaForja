@@ -5,13 +5,11 @@
  *
  * OWNER: Claude (presentation + local state shapes only).
  *
- * This file contains NO business logic. Every piece of behaviour that decides
- * something about an item lives behind the `api` object at the bottom of the
- * imports section, and every one of those functions is a `TODO(codex)` stub that
- * must call the matching /api route, Zod-validate the response and return the
- * typed shape declared here. The state machine itself is called through
- * `reduce()` from src/core/stateMachine.ts — this component never decides which
- * transition is legal, it only renders the result.
+ * This file contains no review or publication policy. The `api` boundary calls
+ * the five real routes, validates every response, and streams reviewer lanes as
+ * they settle. The state machine itself is called through `reduce()` from
+ * src/core/stateMachine.ts — this component never decides which transition is
+ * legal, it only renders the recorded result.
  *
  * Flow order on screen (doc §3 winning slice):
  *   01 item + editable form        05 history re-run by check class
@@ -19,8 +17,8 @@
  *   03 accepted counterexample     07 item passport
  *   04 repair v1 -> v2 + diff
  *
- * THE ROUTES ARE THE SOURCE OF TRUTH. Exactly five exist, and the stubs below
- * call these and nothing else:
+ * THE ROUTES ARE THE SOURCE OF TRUTH. Exactly five exist, and the client calls
+ * these and nothing else:
  *   POST /api/session            -> loadDemoChallenge
  *   POST /api/gauntlet           -> runGauntlet        (ndjson stream)
  *   POST /api/repair             -> submitRepair       (slice elements 4 AND 5)
@@ -39,7 +37,8 @@
  * must resolve to a route.ts on disk.
  */
 
-import { useCallback, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { z } from 'zod';
 
 import { reduce } from '@/core/stateMachine';
 import {
@@ -59,6 +58,14 @@ import {
 import type { ReRunOutcome } from '@/core/checks';
 import type { Passport } from '@/passport/passport';
 import { LENGTH_HIGH, LENGTH_LOW, OVERLAP_HIGH } from '@/probe/itemProbe';
+import {
+  AmbiguitySchema,
+  DefenseQuestionsSchema,
+  DefenseRubricSchema,
+  DisciplineSchema,
+  DistractorMapSchema,
+  ItemProbeSchema,
+} from '@/reviewers/schemas';
 
 // ---------------------------------------------------------------------------
 // Local state shapes (typed from src/core/types.ts — never re-declared by hand)
@@ -72,10 +79,12 @@ export interface StudioItem {
   options: string[];
   correctKey: string;
   authorRationale: string;
+  /** Display-only anchor supplied by the demo seed; arbitrary items omit it. */
+  stemSplit?: { before: string; ambiguous: string; after: string };
 }
 
 /** The editable form buffer. Same fields as StudioItem, minus identity. */
-type ItemDraft = Omit<StudioItem, 'id' | 'versionNumber'>;
+type ItemDraft = Omit<StudioItem, 'id' | 'versionNumber' | 'stemSplit'>;
 
 /** A reviewer's parsed evidence contract, discriminated by reviewer. */
 type LaneContract =
@@ -157,7 +166,7 @@ export interface DefenseResult {
   outcome: 'passed' | 'failed' | 'inconclusive';
   /** Item state AFTER the server dispatched the defense transition. */
   state: ItemState;
-  /** Derived from `outcome` by the stub; the route sends outcome + state. */
+  /** Derived from `outcome` at the client boundary; the route sends outcome + state. */
   event: Extract<
     StateEvent,
     'DEFENSE_PASSED' | 'DEFENSE_FAILED' | 'DEFENSE_EVALUATOR_FAILED'
@@ -187,6 +196,8 @@ export interface StudioClientProps {
   reviewerModel: string;
   adjudicatorModel: string;
   modelCompliant: boolean;
+  /** False when no server-side API key is configured; model controls stay inert. */
+  modelCallsAvailable: boolean;
   /**
    * The seeded demo challenge, mirrored from prisma/seed.ts so the studio has
    * something to render before the session route answers.
@@ -195,104 +206,327 @@ export interface StudioClientProps {
 }
 
 // ---------------------------------------------------------------------------
-// Data access. EVERY function below is a Codex implementation point.
-// The UI renders what these return and nothing else.
+// Data access. Every boundary is response-validated before it reaches state.
 // ---------------------------------------------------------------------------
 
+const ItemStateSchema = z.enum([
+  'DRAFT',
+  'GAUNTLET',
+  'CHALLENGED',
+  'REGRESSION',
+  'DEFENSE',
+  'DEFENSE_INCONCLUSIVE',
+  'PUBLISHED',
+  'DISPUTED',
+]);
+const ReviewerTypeSchema = z.enum(['ambiguity', 'discipline', 'distractor', 'item_probe']);
+const CheckClassSchema = z.enum(['deterministic', 'counterexample', 'semantic']);
+const CheckStatusSchema = z.enum(['proposed', 'accepted', 'rejected', 'abstained', 'hypothesis']);
+
+const SessionWireSchema = z.object({
+  pseudonym: z.string().min(1),
+  expiresAt: z.string().datetime(),
+  demoItem: z
+    .object({
+      itemId: z.string().min(1),
+      versionNumber: z.number().int().positive(),
+      stem: z.string().min(1),
+      options: z.array(z.string().min(1)).min(2),
+      correctKey: z.string().min(1),
+      authorRationale: z.string().min(1),
+    })
+    .nullable(),
+});
+
+const ExecutableReRunSchema = z.object({
+  originalCheckId: z.string().min(1),
+  checkClass: z.enum(['deterministic', 'counterexample']),
+  result: z.enum(['pass', 'regressed', 'inconclusive']),
+  blocksPublish: z.boolean(),
+  detail: z.string().optional(),
+});
+const SemanticReRunSchema = z.object({
+  originalCheckId: z.string().min(1),
+  checkClass: z.literal('semantic'),
+  result: z.enum(['readjudicated', 'inconclusive']),
+  blocksPublish: z.literal(false),
+  verdict: z
+    .object({
+      status: z.enum(['upheld', 'withdrawn', 'modified']),
+      rationale: z.string().min(1),
+      adjudicatedAt: z.string(),
+    })
+    .optional(),
+  detail: z.string().optional(),
+});
+const ReRunSchema = z.union([ExecutableReRunSchema, SemanticReRunSchema]);
+const RepairWireSchema = z.object({
+  itemId: z.string().min(1),
+  newVersionId: z.string().min(1),
+  versionNumber: z.number().int().positive(),
+  diff: z.string().nullable(),
+  reRun: z.object({
+    byClass: z.object({
+      deterministic: z.array(ReRunSchema),
+      counterexample: z.array(ReRunSchema),
+      semantic: z.array(ReRunSchema),
+    }),
+    blocksPublish: z.boolean(),
+    total: z.number().int().nonnegative(),
+  }),
+  state: ItemStateSchema,
+});
+
+const QuestionsWireSchema = z.object({
+  phase: z.literal('questions'),
+  questions: DefenseQuestionsSchema,
+  state: ItemStateSchema,
+});
+const ScoredWireSchema = z.object({
+  phase: z.literal('scored'),
+  rubric: DefenseRubricSchema.nullable(),
+  outcome: z.enum(['passed', 'failed', 'inconclusive']),
+  state: ItemStateSchema,
+});
+
+const PassportWireSchema = z.object({
+  itemId: z.string().min(1),
+  itemVersionId: z.string().min(1),
+  authorPseudonym: z.string().min(1),
+  provenance: z.string().min(1),
+  license: z.string().min(1),
+  discipline: z.string().min(1),
+  acceptedAttacks: z.array(
+    z.object({ reviewerType: z.string(), checkClass: CheckClassSchema, contract: z.unknown() }),
+  ),
+  historyReRun: z.array(
+    z.object({
+      checkClass: CheckClassSchema,
+      result: z.enum(['pass', 'regressed', 'readjudicated', 'inconclusive']),
+      detail: z.string().optional(),
+      verdict: z.unknown().optional(),
+    }),
+  ),
+  disciplineVerdict: z.object({
+    verdict: z.enum(['correct', 'incorrect', 'unverified']),
+    citation: z
+      .object({
+        source_id: z.string(),
+        version_date: z.string(),
+        license: z.string(),
+        excerpt: z.string(),
+        relevance: z.string(),
+      })
+      .nullable(),
+  }),
+  defense: z.union([DefenseRubricSchema, z.object({ outcome: z.literal('inconclusive') })]),
+  versions: z.array(
+    z.object({ versionNumber: z.number().int().positive(), diff: z.string().optional() }),
+  ),
+  publishedAt: z.string(),
+});
+
+const GauntletEventSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('run_started'),
+    reviewerModel: z.string(),
+    adjudicatorModel: z.string(),
+    compliance: z.boolean(),
+  }).passthrough(),
+  z.object({
+    type: z.literal('reviewer_result'),
+    reviewerType: ReviewerTypeSchema,
+    ok: z.boolean(),
+    degraded: z.boolean(),
+    schemaValid: z.boolean(),
+    latencyMs: z.number().nonnegative(),
+    contract: z.unknown().optional(),
+    error: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('adjudication'),
+    checks: z.array(
+      z.object({
+        reviewerType: ReviewerTypeSchema,
+        checkClass: CheckClassSchema,
+        status: CheckStatusSchema,
+        contract: z.unknown(),
+        schemaValid: z.boolean(),
+        note: z.string().optional(),
+      }),
+    ),
+    abstained: z.number().int().nonnegative(),
+  }).passthrough(),
+  z.object({
+    type: z.literal('run_completed'),
+    dispatchedEvent: z.enum(['CHECKS_ACCEPTED', 'GAUNTLET_CLEAN']).nullable(),
+  }).passthrough(),
+  z.object({ type: z.literal('error'), code: z.string(), message: z.string() }),
+]);
+
+async function responseJson(response: Response): Promise<unknown> {
+  const data: unknown = await response.json();
+  if (!response.ok) {
+    const parsed = z
+      .object({ error: z.object({ message: z.string() }) })
+      .safeParse(data);
+    throw new Error(parsed.success ? parsed.data.error.message : `Request failed (${response.status})`);
+  }
+  return data;
+}
+
+function parseLaneContract(reviewerType: ReviewerType, value: unknown): LaneContract {
+  switch (reviewerType) {
+    case 'ambiguity':
+      return { kind: 'ambiguity', value: AmbiguitySchema.parse(value) };
+    case 'discipline':
+      return { kind: 'discipline', value: DisciplineSchema.parse(value) };
+    case 'distractor':
+      return { kind: 'distractor', value: DistractorMapSchema.parse(value) };
+    case 'item_probe':
+      return { kind: 'item_probe', value: ItemProbeSchema.parse(value) };
+  }
+}
+
 const api = {
-  /**
-   * TODO(codex): POST /api/session — create an isolated visitor session
-   * (random pseudonym, TTL from SESSION_TTL_MINUTES, rate limited, zero PII,
-   * doc §10) and return it together with the seeded demo item's current version
-   * (prisma/seed.ts). Zod-validate the response body before returning.
-   */
   async loadDemoChallenge(): Promise<SessionInfo> {
-    throw new Error('POST /api/session is not wired yet');
+    const response = await fetch('/api/session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const parsed = SessionWireSchema.parse(await responseJson(response));
+    if (parsed.demoItem === null) throw new Error('The demo database has not been seeded.');
+    const expiresAt = Date.parse(parsed.expiresAt);
+    return {
+      pseudonym: parsed.pseudonym,
+      ttlMinutes: Number.isFinite(expiresAt)
+        ? Math.max(0, Math.round((expiresAt - Date.now()) / 60_000))
+        : 0,
+      item: {
+        id: parsed.demoItem.itemId,
+        versionNumber: parsed.demoItem.versionNumber,
+        stem: parsed.demoItem.stem,
+        options: parsed.demoItem.options,
+        correctKey: parsed.demoItem.correctKey,
+        authorRationale: parsed.demoItem.authorRationale,
+      },
+    };
   },
 
-  /**
-   * TODO(codex): POST /api/gauntlet — run the gauntlet for `itemId`.
-   *  - Server side: runGauntlet() (3 concurrent Responses calls + the
-   *    deterministic item_probe) then adjudicate() (src/reviewers/adjudication.ts).
-   *  - Stream each reviewer's result as it settles (SSE or a chunked JSON stream)
-   *    and call `onLane` per reviewer so the four lanes fill independently.
-   *  - A reviewer that fails or times out must arrive as
-   *    onLane(type, { status: 'degraded', error }) — never as a thrown error.
-   *  - Resolve with the adjudicated checks and the transition event the server
-   *    decided (CHECKS_ACCEPTED when any check is accepted, else GAUNTLET_CLEAN).
-   *  - Persist a ModelCall per call and a GauntletRun for the pass.
-   */
   async runGauntlet(
-    _itemId: string,
-    _onLane: (reviewerType: ReviewerType, patch: Partial<LaneState>) => void,
+    itemId: string,
+    onLane: (reviewerType: ReviewerType, patch: Partial<LaneState>) => void,
   ): Promise<GauntletResult> {
-    throw new Error('POST /api/gauntlet is not wired yet');
+    const response = await fetch('/api/gauntlet', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ itemId }),
+    });
+    if (!response.ok) await responseJson(response);
+    if (response.body === null) throw new Error('The gauntlet stream did not open.');
+
+    let reviewerModel: string | null = null;
+    let checks: AdjudicatedCheckView[] | null = null;
+    let abstained = 0;
+    let event: GauntletResult['event'] | null = null;
+    let buffer = '';
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    const consume = (line: string): void => {
+      if (line.trim().length === 0) return;
+      const parsed = GauntletEventSchema.parse(JSON.parse(line));
+      if (parsed.type === 'run_started') {
+        reviewerModel = parsed.reviewerModel;
+        return;
+      }
+      if (parsed.type === 'reviewer_result') {
+        const contract =
+          parsed.ok && parsed.contract !== undefined
+            ? parseLaneContract(parsed.reviewerType, parsed.contract)
+            : null;
+        onLane(parsed.reviewerType, {
+          status: parsed.degraded ? 'degraded' : 'done',
+          contract,
+          latencyMs: parsed.latencyMs,
+          schemaValid: parsed.schemaValid,
+          model: reviewerModel,
+          error: parsed.error ?? null,
+        });
+        return;
+      }
+      if (parsed.type === 'adjudication') {
+        checks = parsed.checks.map((check, index) => ({
+          id: `${check.reviewerType}-${index}`,
+          reviewerType: check.reviewerType,
+          checkClass: check.checkClass,
+          status: check.status,
+          contract: parseLaneContract(check.reviewerType, check.contract),
+          ...(check.note === undefined ? {} : { note: check.note }),
+        }));
+        abstained = parsed.abstained;
+        return;
+      }
+      if (parsed.type === 'run_completed') {
+        event = parsed.dispatchedEvent;
+        return;
+      }
+      throw new Error(parsed.message);
+    };
+
+    while (true) {
+      const part = await reader.read();
+      buffer += decoder.decode(part.value, { stream: !part.done });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) consume(line);
+      if (part.done) break;
+    }
+    consume(buffer);
+
+    if (checks === null || event === null) {
+      throw new Error('The gauntlet ended without a complete adjudicated result.');
+    }
+    return { checks, abstained, adjudicatorModel: '', event };
   },
 
-  /**
-   * TODO(codex): POST /api/repair with
-   * `{ itemId, stem, options, correctKey, authorRationale }` (the route's
-   * RepairRequestSchema is `.strict()` — do not send the draft object verbatim
-   * under a `draft` key, and do not send a versionNumber; the server derives it).
-   *
-   * ONE request does the whole of slice elements 4 AND 5. The route creates the
-   * NEW ItemVersion (published versions are immutable; a repair is never a
-   * mutation), then re-runs the FULL recorded check history against it via
-   * reRunHistory(), persists a HistoryReRun row per outcome, and dispatches
-   * SUBMIT_REPAIR followed by HISTORY_REGRESSED / HISTORY_CLEAN server-side.
-   *
-   * There is NO separate re-run endpoint. Calling one would re-execute the whole
-   * history a second time and write duplicate HistoryReRun rows.
-   *
-   * Return the route's body unchanged: `{ itemId, newVersionId, versionNumber,
-   * diff, reRun: { byClass, blocksPublish, total }, state }`. Zod-validate it
-   * before returning.
-   */
-  async submitRepair(_itemId: string, _draft: ItemDraft): Promise<RepairResult> {
-    throw new Error('POST /api/repair is not wired yet');
+  async submitRepair(itemId: string, draft: ItemDraft): Promise<RepairResult> {
+    const response = await fetch('/api/repair', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ itemId, ...draft }),
+    });
+    return RepairWireSchema.parse(await responseJson(response)) as RepairResult;
   },
 
-  /**
-   * TODO(codex): POST /api/defense with `{ itemId }` and NO `answers` key — that
-   * absence is what selects the questions phase of this two-phase endpoint.
-   *
-   * Server side: generateDefenseQuestions() (src/defense/viva.ts) grounded in the
-   * accepted findings, validated with DefenseQuestionsSchema. The response is
-   * `{ phase: 'questions', itemId, itemVersionId, questions, state }`; return
-   * `questions`, which is exactly 2 entries.
-   */
-  async startDefense(_itemId: string): Promise<DefenseQuestion[]> {
-    throw new Error('POST /api/defense is not wired yet');
+  async startDefense(itemId: string): Promise<DefenseQuestion[]> {
+    const response = await fetch('/api/defense', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ itemId }),
+    });
+    return QuestionsWireSchema.parse(await responseJson(response)).questions;
   },
 
-  /**
-   * TODO(codex): POST /api/defense with `{ itemId, answers }` — the SAME endpoint
-   * as startDefense; the presence of `answers` selects the scoring phase.
-   *
-   * `answers` is a positional ARRAY of exactly 2 non-empty strings, ordered to
-   * match the questions (the route schema is
-   * `z.array(z.string().min(1)).length(2)`). It is not a map keyed by question id.
-   *
-   * Server side: scoreDefense() against the 3-dimension rubric (0-2 + textual
-   * evidence each). The response is `{ phase: 'scored', rubric, outcome, state }`.
-   * Map `outcome` onto the transition event for the reducer:
-   *   'passed'       -> DEFENSE_PASSED
-   *   'failed'       -> DEFENSE_FAILED
-   *   'inconclusive' -> DEFENSE_EVALUATOR_FAILED
-   * An evaluator failure arrives as a 200 with outcome 'inconclusive' and
-   * `rubric: null` — never an error, never an auto-reject (doc §6.3).
-   */
-  async submitDefense(_itemId: string, _answers: string[]): Promise<DefenseResult> {
-    throw new Error('POST /api/defense is not wired yet');
+  async submitDefense(itemId: string, answers: string[]): Promise<DefenseResult> {
+    const response = await fetch('/api/defense', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ itemId, answers }),
+    });
+    const parsed = ScoredWireSchema.parse(await responseJson(response));
+    const events = {
+      passed: 'DEFENSE_PASSED',
+      failed: 'DEFENSE_FAILED',
+      inconclusive: 'DEFENSE_EVALUATOR_FAILED',
+    } as const;
+    return { ...parsed, event: events[parsed.outcome] };
   },
 
-  /**
-   * TODO(codex): GET /api/passport/${itemId} — a path segment, not a query
-   * string. Server side: buildPassport() (src/passport/passport.ts). Returns the
-   * frozen item-level snapshot; Zod-validate it before returning.
-   */
-  async loadPassport(_itemId: string): Promise<Passport> {
-    throw new Error('GET /api/passport/[itemId] is not wired yet');
+  async loadPassport(itemId: string): Promise<Passport> {
+    const response = await fetch(`/api/passport/${itemId}`);
+    return PassportWireSchema.parse(await responseJson(response)) as Passport;
   },
 };
 
@@ -326,18 +560,15 @@ const BRANCH_STATES = ['DEFENSE_INCONCLUSIVE', 'DISPUTED'] as const satisfies re
 const CLASS_PROMISE: Record<CheckClass, { title: string; promise: string }> = {
   deterministic: {
     title: 'Deterministic',
-    promise:
-      'The promise of this class is strict non-regression: a new version must not reintroduce the failure. Fixed thresholds, recomputed in code.',
+    promise: 'cannot regress',
   },
   counterexample: {
     title: 'Counterexample',
-    promise:
-      'The construction is meant to be re-executed against every new version. While it still holds, the item must not publish.',
+    promise: 're-executed; blocks while it holds',
   },
   semantic: {
-    title: 'Semantic judgment',
-    promise:
-      'Re-adjudicated per version by design. Never stated as an absolute guarantee; the result stays visible in the passport.',
+    title: 'Semantic',
+    promise: 're-adjudicated; never a guarantee',
   },
 };
 
@@ -401,7 +632,7 @@ const ROADMAP: string[] = [
 const OPTION_KEYS = ['A', 'B', 'C', 'D', 'E'];
 
 const GUARANTEE_TEXT =
-  'The promise of the design: every repair re-runs all recorded counterexamples and checks, deterministic invariants must not regress, and semantic judgments are re-adjudicated and shown in the passport rather than treated as settled. The re-run engine that executes this is next.';
+  'Every repair re-runs the full recorded history. Each class keeps its own promise; no stronger claim is inferred.';
 
 // ---------------------------------------------------------------------------
 // Small pure helpers (presentation only)
@@ -514,6 +745,7 @@ export default function StudioClient({
   reviewerModel,
   adjudicatorModel,
   modelCompliant,
+  modelCallsAvailable,
   demoFixture,
 }: StudioClientProps) {
   const [state, setState] = useState<ItemState>('DRAFT');
@@ -542,6 +774,7 @@ export default function StudioClient({
   const [notice, setNotice] = useState<Notice | null>(null);
   const [timeToCounterexampleMs, setTimeToCounterexampleMs] = useState<number | null>(null);
   const gauntletStartedRef = useRef<number | null>(null);
+  const counterexampleRef = useRef<HTMLElement | null>(null);
 
   // -- state machine bridge -------------------------------------------------
   // The UI never decides a transition; it asks the Codex-owned reducer.
@@ -581,18 +814,24 @@ export default function StudioClient({
     setNotice(null);
     try {
       const info = await api.loadDemoChallenge();
-      setSession(info);
-      setItem(info.item);
-      setDraft(draftOf(info.item));
+      const loadedItem: StudioItem = {
+        ...info.item,
+        ...(info.item.stem === demoFixture.stem && demoFixture.stemSplit
+          ? { stemSplit: demoFixture.stemSplit }
+          : {}),
+      };
+      setSession({ ...info, item: loadedItem });
+      setItem(loadedItem);
+      setDraft(draftOf(loadedItem));
     } catch (err) {
-      // The route is not wired yet: fall back to the mirrored fixture so the
-      // studio stays usable, and say so plainly.
+      // Keep the sheet inspectable if local persistence has not been seeded,
+      // while explicitly marking the fallback as unrecorded.
       setItem(demoFixture);
       setDraft(draftOf(demoFixture));
       setNotice({
         tone: 'warn',
         label: 'Local fixture',
-        text: `Loaded the demo challenge from the local fixture. The isolated session route is next — ${errorText(err)}.`,
+        text: `The isolated session could not be created, so this unrecorded local fixture is shown instead: ${errorText(err)}.`,
       });
     } finally {
       setBusy(null);
@@ -600,7 +839,7 @@ export default function StudioClient({
   }, [demoFixture]);
 
   const handleSubmitToGauntlet = useCallback(async () => {
-    if (!item || !draft) return;
+    if (!item || !draft || !modelCallsAvailable) return;
     setBusy('gauntlet');
     setNotice(null);
     setChecks([]);
@@ -654,7 +893,7 @@ export default function StudioClient({
     } finally {
       setBusy(null);
     }
-  }, [applyEvent, draft, item, patchLane]);
+  }, [applyEvent, draft, item, modelCallsAvailable, patchLane]);
 
   const handleSubmitRepair = useCallback(async () => {
     if (!item || !draft) return;
@@ -687,7 +926,7 @@ export default function StudioClient({
   }, [applyEvent, draft, item]);
 
   const handleStartDefense = useCallback(async () => {
-    if (!item) return;
+    if (!item || !modelCallsAvailable) return;
     setBusy('defense-questions');
     setNotice(null);
     try {
@@ -704,7 +943,7 @@ export default function StudioClient({
     } finally {
       setBusy(null);
     }
-  }, [item]);
+  }, [item, modelCallsAvailable]);
 
   const handleSubmitDefense = useCallback(async () => {
     if (!item) return;
@@ -744,12 +983,6 @@ export default function StudioClient({
     return RAIL_STATES.indexOf('PUBLISHED');
   }, [state]);
 
-  const heat = useMemo(() => {
-    const span = RAIL_STATES.length - 1;
-    const ratio = span > 0 ? railIndex / span : 0;
-    return `${Math.round(ratio * 100)}%`;
-  }, [railIndex]);
-
   const acceptedChecks = useMemo(
     () => checks.filter((check) => check.status === 'accepted'),
     [checks],
@@ -763,6 +996,28 @@ export default function StudioClient({
     }
     return null;
   }, [acceptedChecks]);
+
+  const defensibleKeys = useMemo(() => {
+    if (counterexample === null || draft === null) return new Set<string>();
+    const answers = [counterexample.contract.answer_a, counterexample.contract.answer_b];
+    return new Set(
+      draft.options.flatMap((option, index) =>
+        answers.some((answer) => answer.trim() === option.trim()) ? [optionKey(index)] : [],
+      ),
+    );
+  }, [counterexample, draft]);
+
+  useEffect(() => {
+    if (counterexample === null || counterexampleRef.current === null) return;
+    const frame = requestAnimationFrame(() => {
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      counterexampleRef.current?.scrollIntoView({
+        behavior: reduced ? 'auto' : 'smooth',
+        block: 'start',
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [counterexample]);
 
   // The route requires exactly 2 non-empty answers
   // (`z.array(z.string().min(1)).length(2)`), so an incomplete defense is
@@ -809,42 +1064,23 @@ export default function StudioClient({
   return (
     <main className="shell">
       <header className="masthead">
-        <div>
-          <h1 className="wordmark">
-            <span>LA</span>
-            <span className="wordmark__forja">FORJA</span>
-            <span className="wordmark__kind">an adversarial learning studio</span>
-          </h1>
+        <div className="masthead__claim">
+          <h1 className="wordmark">LA FORJA</h1>
           <p className="tagline">
-            <strong>Getting the right answer is not enough.</strong> Forge it, attack it,
-            defend it. High-school and college mathematics. By design the reviewers return
-            challenges and evidence; the item, the repair and the defense stay with the
-            student.
+            Getting the right answer is not enough. Forge it, attack it, defend it.
+          </p>
+          <p className="masthead__descriptor">
+            An adversarial learning studio for high-school and college mathematics.
           </p>
         </div>
         <div className="masthead__meta">
+          <div className="meta-row"><span>reviewer model</span><b>{reviewerModel}</b></div>
+          <div className="meta-row"><span>adjudicator model</span><b>{adjudicatorModel}</b></div>
+          <div className="meta-row"><span>session</span><b>{session?.pseudonym ?? 'UNASSIGNED'}</b></div>
+          <div className="meta-row"><span>privacy</span><b>ZERO PII</b></div>
           <div className="meta-row">
-            <span>reviewers</span>
-            <b>{reviewerModel}</b>
-            <span>·</span>
-            <span>adjudication</span>
-            <b>{adjudicatorModel}</b>
-          </div>
-          <div className="meta-row">
-            <span className={modelCompliant ? 'tag tag--ok' : 'tag tag--crit'}>
-              {modelCompliant ? 'gpt-5.6 family' : 'non-compliant model'}
-            </span>
-            <span className="tag">
-              session · {session ? session.pseudonym : 'not started'}
-            </span>
-            <span className="tag">zero PII</span>
-          </div>
-          <div className="meta-row">
-            <span>scope</span>
-            <b>high-school / college mathematics</b>
-            <span>·</span>
-            <span>demo discipline</span>
-            <b>probability</b>
+            <span>model calls</span>
+            <b>{modelCallsAvailable && modelCompliant ? 'AVAILABLE' : 'NEXT · NOT CONFIGURED'}</b>
           </div>
           {timeToCounterexampleMs !== null ? (
             <div className="meta-row">
@@ -858,13 +1094,20 @@ export default function StudioClient({
       {/* ---------------------------------------------------------------- rail */}
       <section className="rail-block" aria-label="Item lifecycle">
         <div className="rail-scroll">
-          <ol className="rail" style={{ '--heat': heat } as CSSProperties}>
+          <ol className="rail">
             {RAIL_STATES.map((railState, index) => {
               const phase =
                 index < railIndex ? 'past' : index === railIndex ? 'current' : 'future';
               return (
-                <li key={railState} className="rail__node" data-phase={phase}>
-                  <span className="rail__notch" aria-hidden="true" />
+                <li
+                  key={railState}
+                  className="rail__node"
+                  data-phase={phase}
+                  aria-current={phase === 'current' ? 'step' : undefined}
+                >
+                  <span className="rail__notch" aria-hidden="true">
+                    {phase === 'past' ? '✱' : ''}
+                  </span>
                   <span className="rail__label">{railState}</span>
                   <span className="rail__note">{STATE_COPY[railState].note}</span>
                 </li>
@@ -874,17 +1117,21 @@ export default function StudioClient({
         </div>
 
         <div className="branches">
-          <span className="branches__caption">Branch states</span>
+          <span className="branches__caption">Exceptions</span>
           {BRANCH_STATES.map((branch) => (
             <span
               key={branch}
               className="branch"
               data-reached={reachedBranches.includes(branch) ? 'true' : 'false'}
               data-current={state === branch ? 'true' : 'false'}
+              aria-disabled={branch === 'DISPUTED' ? 'true' : undefined}
+              tabIndex={branch === 'DISPUTED' ? -1 : undefined}
             >
               {branch}
               <span className="muted">· {STATE_COPY[branch].note}</span>
-              {branch === 'DISPUTED' ? <span className="tag tag--next">next</span> : null}
+              {branch === 'DISPUTED' ? (
+                <span className="tag tag--next" aria-disabled="true">next</span>
+              ) : null}
             </span>
           ))}
         </div>
@@ -910,14 +1157,11 @@ export default function StudioClient({
       {/* ---------------------------------------------------------- onboarding */}
       <section className="onboard">
         <div className="onboard__primary">
-          <p className="onboard__kicker">First session</p>
-          <h2 className="onboard__title">
-            {item ? 'Demo challenge loaded' : 'Start with a broken item, not a blank form'}
-          </h2>
+          <h2 className="onboard__title">Start with a broken item</h2>
           <p className="onboard__copy">
             {item
-              ? 'The item below is a deliberately defective probability item. The cycle it is built for: send it through the gauntlet, read the counterexample, repair it, defend the repair.'
-              : 'You get an original probability item with a real defect in it. The cycle is built to make you find the flaw, repair it, and watch the passport grow with your repair.'}
+              ? 'The team-authored probability challenge is loaded on the assay sheet below.'
+              : 'Load the team-authored probability challenge. It contains a deliberate defect and no personal data.'}
           </p>
           <div className="onboard__actions">
             <button
@@ -932,20 +1176,14 @@ export default function StudioClient({
           </div>
         </div>
 
-        <div className="onboard__secondary">
-          <p className="onboard__kicker">Authoring</p>
-          <h3 className="lane__name" style={{ marginTop: 'var(--s3)' }}>
-            Author your own item
-          </h3>
+        <div className="onboard__secondary" aria-disabled="true">
+          <h3 className="onboard__locked-title">Author your own item</h3>
           <p className="lane__rule" style={{ marginTop: 'var(--s3)' }}>
             Repair first. Creating an item from scratch stays locked while you work through
             the demo cycle.
           </p>
           <div className="onboard__actions">
-            <button type="button" className="btn btn--locked" disabled aria-disabled="true">
-              <span className="btn__lock" aria-hidden="true">
-                ▮
-              </span>
+            <button type="button" className="btn btn--locked" disabled aria-disabled="true" tabIndex={-1}>
               Author your own item
             </button>
             <span className="tag tag--next">next</span>
@@ -963,10 +1201,11 @@ export default function StudioClient({
           {/* ------------------------------------------------ 01 item + form */}
           <section className="panel" id="item">
             <div className="panel__head">
-              <span className="panel__step">01 · Billet</span>
+              <span className="panel__step">01</span>
               <h2 className="panel__title">The item</h2>
               <span className="panel__aside">
-                v{item.versionNumber} · probability · {formEditable ? 'editable' : 'read only'}
+                <span className="station">BILLET</span>
+                v{item.versionNumber} · {formEditable ? 'editable' : 'read only'}
               </span>
             </div>
             <p className="panel__lede">
@@ -1003,6 +1242,7 @@ export default function StudioClient({
                           className="option"
                           key={key}
                           data-correct={draft.correctKey === key ? 'true' : 'false'}
+                          data-defensible={defensibleKeys.has(key) ? 'true' : 'false'}
                         >
                           <input
                             type="radio"
@@ -1021,6 +1261,10 @@ export default function StudioClient({
                             onChange={(event) => setDraftOption(index, event.target.value)}
                             aria-label={`Option ${key}`}
                           />
+                          {draft.correctKey === key ? <span className="option__tag">KEY</span> : null}
+                          {defensibleKeys.has(key) ? (
+                            <span className="option__note">defensible under a reading</span>
+                          ) : null}
                         </div>
                       );
                     })}
@@ -1054,12 +1298,16 @@ export default function StudioClient({
                 type="button"
                 className="btn btn--forge"
                 onClick={() => void handleSubmitToGauntlet()}
-                disabled={busy !== null || state !== 'DRAFT'}
+                disabled={busy !== null || state !== 'DRAFT' || !modelCallsAvailable}
+                aria-disabled={!modelCallsAvailable}
+                tabIndex={!modelCallsAvailable ? -1 : undefined}
               >
-                {busy === 'gauntlet' ? 'Running the gauntlet…' : 'Start gauntlet'}
+                {busy === 'gauntlet' ? 'Running the gauntlet…' : 'Run the gauntlet'}
               </button>
               <span className="btn-note">
-                Three concurrent reviewers and one deterministic probe. Running them is next.
+                {modelCallsAvailable
+                  ? 'Three concurrent reviewers and one deterministic probe.'
+                  : 'next · model transport requires a server API key'}
               </span>
             </div>
           </section>
@@ -1067,39 +1315,46 @@ export default function StudioClient({
           {/* ---------------------------------------------------- 02 gauntlet */}
           <section className="panel" id="gauntlet">
             <div className="panel__head">
-              <span className="panel__step">02 · Heat</span>
+              <span className="panel__step">02</span>
               <h2 className="panel__title">The gauntlet</h2>
-              <span className="tag tag--next">next</span>
               <span className="panel__aside">
+                <span className="station">HEAT</span>
                 {abstained > 0 ? `${abstained} abstained` : 'four independent lanes'}
               </span>
             </div>
             <p className="panel__lede">
-              Each lane carries its own evidence contract and is built to fail on its own: a
-              reviewer that times out degrades its lane while the other lanes still report,
-              and nothing is collapsed into a single score. The reviewer calls themselves are
-              next, so the lanes below stay empty until they are wired.
+              Four independent evidence contracts settle separately. Without a configured
+              model transport, their absence stays visible and is labelled next.
             </p>
 
             <div className="panel__body lanes">
               {LANE_SPECS.map((spec) => (
-                <LanePanel key={spec.reviewerType} spec={spec} lane={lanes[spec.reviewerType]} />
+                <LanePanel
+                  key={spec.reviewerType}
+                  spec={spec}
+                  lane={lanes[spec.reviewerType]}
+                  available={modelCallsAvailable || spec.reviewerType === 'item_probe'}
+                />
               ))}
             </div>
           </section>
 
           {/* -------------------------------------------- 03 counterexample */}
-          <section className="panel" id="counterexample">
+          <section
+            className="panel panel--fracture"
+            id="counterexample"
+            ref={counterexampleRef}
+            data-populated={counterexample ? 'true' : 'false'}
+          >
             <div className="panel__head">
-              <span className="panel__step">03 · Fracture</span>
+              <span className="panel__step">03</span>
               <h2 className="panel__title">Accepted counterexample</h2>
-              <span className="tag tag--next">next</span>
-              <span className="panel__aside">separate adjudication step</span>
+              <span className="panel__aside"><span className="station">FRACTURE</span>separate adjudication</span>
             </div>
             <p className="panel__lede">
               What this surface is built to show is not a score but a construction anyone can
               re-execute: two readings of the same stem that produce two different answers.
-              The separate adjudication step that accepts one is next.
+              An accepted record will appear only after the separate adjudication step.
             </p>
 
             <div className="panel__body">
@@ -1107,13 +1362,14 @@ export default function StudioClient({
                 <CounterexampleCard
                   contract={counterexample.contract}
                   checkClass={counterexample.check.checkClass}
+                  stem={item.stem}
+                  stemSplit={item.stemSplit}
                   note={counterexample.check.note}
                 />
               ) : (
-                <div className="card card--flat">
+                <div className="pending-surface" aria-disabled="true">
                   <p className="lane__empty">
-                    No accepted counterexample. Nothing can be accepted until the gauntlet and
-                    the adjudication step are wired — both are next.
+                    NEXT — no accepted counterexample is recorded. The assay remains unstamped.
                   </p>
                 </div>
               )}
@@ -1138,19 +1394,18 @@ export default function StudioClient({
           {/* ------------------------------------------------------ 04 repair */}
           <section className="panel" id="repair">
             <div className="panel__head">
-              <span className="panel__step">04 · Hammer</span>
+              <span className="panel__step">04</span>
               <h2 className="panel__title">Repair</h2>
-              <span className="tag tag--next">next</span>
               <span className="panel__aside">
+                <span className="station">HAMMER</span>
                 {previousVersion
                   ? `v${previousVersion.versionNumber} → v${item.versionNumber}`
                   : `v${item.versionNumber} → v${item.versionNumber + 1}`}
               </span>
             </div>
             <p className="panel__lede">
-              A repair never edits the recorded version; it creates the next one, and the diff
-              below is what the passport is built to carry. The word-level diff renders live
-              from what you type. Writing the new version is next.
+              A repair creates a new version and records its base. The word-level diff below
+              distinguishes removed and added text without pass/fail colour.
             </p>
 
             <div className="panel__body">
@@ -1195,11 +1450,10 @@ export default function StudioClient({
                   onClick={() => void handleSubmitRepair()}
                   disabled={busy !== null || !repairEditable}
                 >
-                  {busy === 'repair' ? 'Forging the new version…' : 'Submit repair'}
+                  {busy === 'repair' ? 'Recording the new version…' : 'Submit repair'}
                 </button>
                 <span className="btn-note">
-                  Submitting is designed to create a new version and re-run the full check
-                  history in that same request. Both are next.
+                  One request will create the new version and re-run the full recorded history.
                 </span>
               </div>
             </div>
@@ -1208,10 +1462,9 @@ export default function StudioClient({
           {/* ------------------------------------------------- 05 history re-run */}
           <section className="panel" id="rerun">
             <div className="panel__head">
-              <span className="panel__step">05 · Quench</span>
+              <span className="panel__step">05</span>
               <h2 className="panel__title">History re-run</h2>
-              <span className="tag tag--next">next</span>
-              <span className="panel__aside">grouped by check class</span>
+              <span className="panel__aside"><span className="station">QUENCH</span>grouped by check class</span>
             </div>
             <p className="guarantee">{GUARANTEE_TEXT}</p>
 
@@ -1232,16 +1485,17 @@ export default function StudioClient({
                     <div className="class-group__list">
                       {outcomes.length === 0 ? (
                         <p className="lane__empty">
-                          Nothing recorded in this class. The re-run that would fill it is
-                          next.
+                          No result is recorded in this class for the current version.
                         </p>
                       ) : (
                         outcomes.map((outcome) => (
-                          <div className="rerun fade-in" key={outcome.originalCheckId}>
+                          <div className="rerun" key={outcome.originalCheckId}>
                             <div className="rerun__top">
                               <span>{outcome.originalCheckId}</span>
                               <span className={`rerun__result rerun__result--${outcome.result}`}>
-                                {outcome.result}
+                                {outcome.checkClass === 'counterexample' && outcome.result === 'regressed'
+                                  ? 'STILL HOLDS · BLOCKS PUBLICATION'
+                                  : outcome.result}
                               </span>
                             </div>
                             {outcome.detail ? (
@@ -1260,22 +1514,29 @@ export default function StudioClient({
           {/* ----------------------------------------------------- 06 defense */}
           <section className="panel" id="defense">
             <div className="panel__head">
-              <span className="panel__step">06 · Proof</span>
+              <span className="panel__step">06</span>
               <h2 className="panel__title">Written defense</h2>
-              <span className="tag tag--next">next</span>
               <span className="panel__aside">
-                two adaptive questions · rubric 3 × 0-2 · publish at ≥ 4/6
+                <span className="station">PROOF</span>2 questions · 3 dimensions
               </span>
             </div>
             <p className="panel__lede">
               The reviewers challenge; the student owns the repair and the defense. Each
-              rubric dimension is built to carry the textual evidence it was scored on, and an
+              rubric dimension carries the textual evidence it was scored on, and an
               evaluator that fails sends the item to DEFENSE_INCONCLUSIVE rather than to an
-              automatic reject. Question generation and rubric scoring are next.
+              automatic reject. Model-evaluated questions and scoring are next without a key.
             </p>
 
             <div className="panel__body viva">
               <div>
+                {state === 'DEFENSE_INCONCLUSIVE' ? (
+                  <div className="defense-exception" role="status">
+                    <b>EVALUATOR FAILED — NO VERDICT RECORDED</b>
+                    <button type="button" className="btn" onClick={handleRetryDefense}>
+                      Retry
+                    </button>
+                  </div>
+                ) : null}
                 {questions.length === 0 ? (
                   <div className="card">
                     <p className="lane__empty">
@@ -1287,7 +1548,9 @@ export default function StudioClient({
                         type="button"
                         className="btn"
                         onClick={() => void handleStartDefense()}
-                        disabled={busy !== null || state !== 'DEFENSE'}
+                        disabled={busy !== null || state !== 'DEFENSE' || !modelCallsAvailable}
+                        aria-disabled={!modelCallsAvailable}
+                        tabIndex={!modelCallsAvailable ? -1 : undefined}
                       >
                         {busy === 'defense-questions' ? 'Preparing…' : 'Open the defense'}
                       </button>
@@ -1324,11 +1587,6 @@ export default function StudioClient({
                       >
                         {busy === 'defense-score' ? 'Scoring…' : 'Submit defense'}
                       </button>
-                      {state === 'DEFENSE_INCONCLUSIVE' ? (
-                        <button type="button" className="btn" onClick={handleRetryDefense}>
-                          Retry the defense
-                        </button>
-                      ) : null}
                     </div>
                   </>
                 )}
@@ -1341,10 +1599,9 @@ export default function StudioClient({
           {/* --------------------------------------------------- 07 passport */}
           <section className="panel" id="passport">
             <div className="panel__head">
-              <span className="panel__step">07 · Stamp</span>
+              <span className="panel__step">07</span>
               <h2 className="panel__title">Item passport</h2>
-              <span className="tag tag--next">next</span>
-              <span className="panel__aside">item level only, never student level</span>
+              <span className="panel__aside"><span className="station">STAMP</span>item level · pseudonym only</span>
             </div>
             <p className="panel__lede">
               What publishing is designed to produce is an auditable learning trace:
@@ -1357,10 +1614,9 @@ export default function StudioClient({
               {passport ? (
                 <PassportCard passport={passport} />
               ) : (
-                <div className="card card--flat">
+                <div className="pending-surface" aria-disabled="true">
                   <p className="lane__empty">
-                    The passport is stamped when the defense passes and the item reaches
-                    PUBLISHED. Assembling it is next.
+                    NEXT — no frozen passport exists until a defense passes.
                   </p>
                 </div>
               )}
@@ -1372,7 +1628,7 @@ export default function StudioClient({
       {/* ------------------------------------------------------------ roadmap */}
       <section className="panel" id="roadmap">
         <div className="panel__head">
-          <span className="panel__step">Out of scope</span>
+          <span className="panel__step">NXT</span>
           <h2 className="panel__title">Next</h2>
           <span className="panel__aside">not built · no controls</span>
         </div>
@@ -1409,9 +1665,11 @@ export default function StudioClient({
           column.
         </p>
         <p>
-          <b>Models.</b> Reviewers run on {reviewerModel}; the separate adjudication step runs
-          on {adjudicatorModel}. Every run is recorded with the exact model id, latency,
-          tokens and prompt version; the calls that produce those records are next.
+          <b>Models.</b> The configured reviewer id is {reviewerModel}; the configured
+          adjudicator id is {adjudicatorModel}.{' '}
+          {modelCallsAvailable
+            ? 'Completed calls carry model id, latency, tokens and prompt version.'
+            : 'Model calls are next until a server API key is configured.'}
         </p>
       </footer>
     </main>
@@ -1422,9 +1680,18 @@ export default function StudioClient({
 // Presentational sub-components
 // ---------------------------------------------------------------------------
 
-function LanePanel({ spec, lane }: { spec: LaneSpec; lane: LaneState }) {
+function LanePanel({
+  spec,
+  lane,
+  available,
+}: {
+  spec: LaneSpec;
+  lane: LaneState;
+  available: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
   return (
-    <article className="lane" data-status={lane.status}>
+    <article className="lane" data-status={lane.status} role="status">
       <div className="lane__top">
         <h3 className="lane__name">{spec.name}</h3>
         <StatusTag status={lane.status} />
@@ -1435,26 +1702,38 @@ function LanePanel({ spec, lane }: { spec: LaneSpec; lane: LaneState }) {
 
       <div className="lane__state">
         {lane.status === 'running' ? (
-          <>
-            <div className="pulse" aria-hidden="true" />
-            <p className="lane__empty" style={{ marginTop: 'var(--s3)' }}>
-              Streaming…
-            </p>
-          </>
+          <p className="lane__empty">Awaiting a recorded result…</p>
         ) : null}
 
         {lane.status === 'degraded' ? (
-          <p className="lane__error">
-            Lane degraded. {lane.error ?? 'The reviewer did not answer in time.'} The other
-            lanes continue.
-          </p>
+          <div className="lane__degraded">
+            <b>DEGRADED — NO RESULT RECORDED</b>
+            <span>{lane.error ?? 'The reviewer did not answer in time.'}</span>
+          </div>
         ) : null}
 
         {lane.status === 'idle' ? (
-          <p className="lane__empty">Idle. Wiring this lane to its source is next.</p>
+          <p className="lane__empty">
+            {available ? 'Idle — no result recorded.' : 'NEXT — model transport not configured.'}
+          </p>
         ) : null}
 
-        {lane.contract ? <ContractView contract={lane.contract} /> : null}
+        {lane.contract ? (
+          <div className="contract-shell">
+            <div className="contract-summary">
+              <span>{contractSummary(lane.contract)}</span>
+              <button
+                type="button"
+                className="contract-toggle"
+                aria-expanded={expanded}
+                onClick={() => setExpanded((value) => !value)}
+              >
+                {expanded ? 'Collapse contract' : 'Expand contract'}
+              </button>
+            </div>
+            {expanded ? <ContractView contract={lane.contract} /> : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="lane__foot">
@@ -1469,9 +1748,18 @@ function LanePanel({ spec, lane }: { spec: LaneSpec; lane: LaneState }) {
   );
 }
 
+function contractSummary(contract: LaneContract): string {
+  if (contract.kind === 'ambiguity') {
+    return `${contract.value.answer_a} ≠ ${contract.value.answer_b}`;
+  }
+  if (contract.kind === 'discipline') return `verdict · ${contract.value.verdict}`;
+  if (contract.kind === 'distractor') return `${contract.value.length} distractor finding(s)`;
+  return `length ${contract.value.answer_length_ratio.toFixed(2)} · overlap ${contract.value.lexical_overlap_score.toFixed(2)}`;
+}
+
 function StatusTag({ status }: { status: LaneStatus }) {
-  if (status === 'done') return <span className="tag tag--ok">done</span>;
-  if (status === 'degraded') return <span className="tag tag--warn">degraded</span>;
+  if (status === 'done') return <span className="tag">recorded</span>;
+  if (status === 'degraded') return <span className="tag">degraded</span>;
   if (status === 'running') return <span className="tag">running</span>;
   return <span className="tag">idle</span>;
 }
@@ -1528,7 +1816,14 @@ function ContractView({ contract }: { contract: LaneContract }) {
     return (
       <div className="contract">
         {contract.value.map((finding, index) => (
-          <div className="contract-block" key={`${finding.distractor}-${index}`}>
+          <div
+            className={
+              finding.label === 'hypothesis'
+                ? 'contract-block contract-block--hypothesis'
+                : 'contract-block'
+            }
+            key={`${finding.distractor}-${index}`}
+          >
             {`distractor          ${finding.distractor}\n` +
               `hypothesized_error  ${finding.hypothesized_error}\n` +
               `confidence          ${finding.confidence.toFixed(2)}\n` +
@@ -1564,52 +1859,65 @@ function ContractView({ contract }: { contract: LaneContract }) {
 function CounterexampleCard({
   contract,
   checkClass,
+  stem,
+  stemSplit,
   note,
 }: {
   contract: AmbiguityContract;
   checkClass: CheckClass;
+  stem: string;
+  stemSplit?: StudioItem['stemSplit'];
   note?: string;
 }) {
+  const split = stemSplit ?? { before: '', ambiguous: stem, after: '' };
   return (
-    <div className="counterexample fade-in">
-      <div className="counterexample__head">
-        <h3 className="counterexample__title">Two readings, two answers</h3>
-        <span className={`tag tag--${checkClass}`}>{checkClass}</span>
-        <span className="tag tag--ok">accepted</span>
+    <div className="counterexample fork-animate">
+      <div className="fork__stem" aria-label={stem}>
+        <span>{split.before}</span>
+        <span className="fork__ambiguous">{split.ambiguous}</span>
+        <span>{split.after}</span>
+      </div>
+
+      <div className="fork__geometry" aria-hidden="true">
+        <span className="fork__drop" />
+        <span className="fork__arm fork__arm--left" />
+        <span className="fork__arm fork__arm--right" />
       </div>
 
       <div className="readings">
-        <div className="reading">
+        <div className="reading reading--a">
           <p className="reading__label">Reading A</p>
           <p className="reading__text">{contract.interpretation_a}</p>
-          <p className="reading__answer">
-            <span>answer</span>
-            <b>{contract.answer_a}</b>
-          </p>
+          <div className="sample-space" aria-label="Sample space BB, BG, GB; BB favourable">
+            <span data-favourable="true">BB</span><span>BG</span><span>GB</span>
+          </div>
         </div>
-        <div className="readings__vs" aria-hidden="true">
-          ≠
-        </div>
-        <div className="reading">
+        <div className="reading reading--b">
           <p className="reading__label">Reading B</p>
           <p className="reading__text">{contract.interpretation_b}</p>
-          <p className="reading__answer">
-            <span>answer</span>
-            <b>{contract.answer_b}</b>
-          </p>
+          <div className="sample-space" aria-label="Sample space BB, BG; BB favourable">
+            <span data-favourable="true">BB</span><span>BG</span>
+          </div>
         </div>
       </div>
 
-      <div className="counterexample__evidence">
-        <p className="passport__section-title">Evidence</p>
-        <div className="contract-block">{contract.evidence}</div>
+      <div className="collision" aria-label={`${contract.answer_a} is not equal to ${contract.answer_b}`}>
+        <div className="collision__answer"><b>{contract.answer_a}</b><span>option B</span></div>
+        <span className="collision__neq" aria-hidden="true">≠</span>
+        <div className="collision__answer"><b>{contract.answer_b}</b><span>option C</span></div>
       </div>
 
-      <p className="counterexample__verdict">
-        The contract is valid because the two answers differ. This construction is meant to be
-        re-executed against every new version: while it still holds, the item must not publish.
-        {note ? ` ${note}` : ''}
+      <p className="counterexample__finding">
+        Two of the four options are defensible. The item has two correct answers.
       </p>
+
+      <div className="counterexample__audit">
+        <div>
+          <span className={`class-mark class-mark--${checkClass}`}>{checkClass}</span>
+          <p>re-executed against every version; while it holds, the item does not publish.</p>
+        </div>
+        <div className="contract-block">{contract.evidence}{note ? `\n${note}` : ''}</div>
+      </div>
     </div>
   );
 }
@@ -1650,7 +1958,12 @@ function RubricCard({ rubric }: { rubric: DefenseRubric | null }) {
         const scored = rubric?.dimensions.find((dimension) => dimension.dimension === key);
         const score = scored?.score ?? null;
         return (
-          <div className="dim" key={key} data-zero={score === 0 ? 'true' : 'false'}>
+          <div
+            className="dim"
+            key={key}
+            data-zero={score === 0 ? 'true' : 'false'}
+            data-score={score ?? 'unscored'}
+          >
             <div className="dim__top">
               <div>
                 <p className="dim__name">{DIMENSION_COPY[key]}</p>
@@ -1664,14 +1977,14 @@ function RubricCard({ rubric }: { rubric: DefenseRubric | null }) {
             <p className="dim__evidence">
               {scored
                 ? scored.evidence
-                : 'Evidence appears here once rubric scoring is wired — that is next.'}
+                : 'NEXT — no quoted rubric evidence is recorded.'}
             </p>
           </div>
         );
       })}
 
       <p className="rubric__gate">
-        Publishes at 4 of 6 or higher with no dimension at 0.
+        total ≥ 4 and no dimension at 0
         {rubric ? ` Outcome: ${rubric.outcome}.` : ''}
       </p>
     </div>
@@ -1679,8 +1992,14 @@ function RubricCard({ rubric }: { rubric: DefenseRubric | null }) {
 }
 
 function PassportCard({ passport }: { passport: Passport }) {
+  const historyByClass = Object.fromEntries(
+    (Object.keys(CLASS_PROMISE) as CheckClass[]).map((checkClass) => [
+      checkClass,
+      passport.historyReRun.filter((entry) => entry.checkClass === checkClass),
+    ]),
+  ) as Record<CheckClass, Passport['historyReRun']>;
   return (
-    <div className="passport fade-in">
+    <div className="passport">
       <div className="passport__head">
         <div>
           <h3 className="passport__title">Passport · item {passport.itemId}</h3>
@@ -1688,7 +2007,7 @@ function PassportCard({ passport }: { passport: Passport }) {
             version {passport.itemVersionId} · {passport.discipline}
           </p>
         </div>
-        <span className="tag tag--ok">published</span>
+        <span className="tag">PUBLISHED</span>
       </div>
 
       <div className="passport__grid">
@@ -1696,7 +2015,7 @@ function PassportCard({ passport }: { passport: Passport }) {
           <p className="passport__section-title">Provenance and license</p>
           <div className="passport__section-body">
             <dl className="kv">
-              <dt>author</dt>
+              <dt>pseudonym</dt>
               <dd>{passport.authorPseudonym}</dd>
               <dt>provenance</dt>
               <dd>{passport.provenance}</dd>
@@ -1732,23 +2051,31 @@ function PassportCard({ passport }: { passport: Passport }) {
         <section>
           <p className="passport__section-title">History re-run by class</p>
           <div className="passport__section-body">
-            {passport.historyReRun.length === 0 ? (
-              <p className="lane__empty">None recorded.</p>
-            ) : (
-              <ul className="stack-3">
-                {passport.historyReRun.map((entry, index) => (
-                  <li key={`${entry.checkClass}-${index}`} className="rerun">
-                    <div className="rerun__top">
-                      <span className={`tag tag--${entry.checkClass}`}>{entry.checkClass}</span>
-                      <span className={`rerun__result rerun__result--${entry.result}`}>
-                        {entry.result}
-                      </span>
-                    </div>
-                    {entry.detail ? <p className="rerun__detail">{entry.detail}</p> : null}
-                  </li>
-                ))}
-              </ul>
-            )}
+            <div className="passport-history">
+              {(Object.keys(CLASS_PROMISE) as CheckClass[]).map((checkClass) => (
+                <div className="passport-history__class" data-class={checkClass} key={checkClass}>
+                  <span className={`class-mark class-mark--${checkClass}`}>{checkClass}</span>
+                  <p className="class-group__promise">{CLASS_PROMISE[checkClass].promise}</p>
+                  {historyByClass[checkClass].length === 0 ? (
+                    <p className="lane__empty">None recorded.</p>
+                  ) : (
+                    historyByClass[checkClass].map((entry, index) => (
+                      <div key={`${entry.checkClass}-${index}`} className="rerun">
+                        <div className="rerun__top">
+                          <span>{entry.checkClass}</span>
+                          <span className={`rerun__result rerun__result--${entry.result}`}>
+                            {entry.checkClass === 'counterexample' && entry.result === 'regressed'
+                              ? 'STILL HOLDS · BLOCKS PUBLICATION'
+                              : entry.result}
+                          </span>
+                        </div>
+                        {entry.detail ? <p className="rerun__detail">{entry.detail}</p> : null}
+                      </div>
+                    ))
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </section>
 

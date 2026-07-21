@@ -42,3 +42,8 @@ CLAUDE.md
 docs/
 
 # NOTE: /eval/results/ IS versioned — it is evidence (doc §8, gate §13.4).
+
+# Local tool state — not project files
+.claude/
+.codex/
+.agents/

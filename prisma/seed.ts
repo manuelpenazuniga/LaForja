@@ -28,8 +28,14 @@ const prisma = new PrismaClient();
 // English between "at least one of the two is a boy" (⇒ 1/3) and a reference to
 // one particular child (⇒ 1/2). Do not "clarify" this stem — the defect IS the
 // demo. Any edit must preserve both readings and both answers.
+const DEMO_STEM_SPLIT = {
+  before: 'A family has two children. It is known that ',
+  ambiguous: 'one of them is a boy',
+  after: '. What is the probability that both children are boys?',
+} as const;
+
 const DEMO_STEM =
-  'A family has two children. It is known that one of them is a boy. What is the probability that both children are boys?';
+  DEMO_STEM_SPLIT.before + DEMO_STEM_SPLIT.ambiguous + DEMO_STEM_SPLIT.after;
 
 const DEMO_OPTIONS = ['1/4', '1/3', '1/2', '2/3'];
 

@@ -23,15 +23,19 @@ export const dynamic = 'force-dynamic';
  * reading "at least one is a boy", but the stem does not disambiguate, so the
  * reading "a specific child is a boy" yields 1/2. Two readings, two answers.
  *
- * This literal is the render fallback only. TODO(codex): replace it with a real
- * read of the seeded demo item (prisma via src/db/client.ts, or POST /api/session
- * — session creation is a POST, there is no GET on that route) so the page always
- * renders the row that the rest of the run writes against.
+ * This literal is the render fallback used before POST /api/session returns the
+ * visitor's isolated database copy. The explicit three-part split is display
+ * metadata for the assay-sheet fork; it is never guessed from arbitrary text.
  */
 const DEMO_FIXTURE: StudioItem = {
   id: 'demo-local',
   versionNumber: 1,
-  stem: 'A family has two children. It is known that one of them is a boy. What is the probability that both are boys?',
+  stem: 'A family has two children. It is known that one of them is a boy. What is the probability that both children are boys?',
+  stemSplit: {
+    before: 'A family has two children. It is known that ',
+    ambiguous: 'one of them is a boy',
+    after: '. What is the probability that both children are boys?',
+  },
   options: ['1/4', '1/3', '1/2', '2/3'],
   correctKey: 'B',
   authorRationale:
@@ -46,6 +50,7 @@ export default function Page() {
       reviewerModel={models.reviewerModel}
       adjudicatorModel={models.adjudicatorModel}
       modelCompliant={models.compliance}
+      modelCallsAvailable={Boolean(process.env.OPENAI_API_KEY)}
       demoFixture={DEMO_FIXTURE}
     />
   );
