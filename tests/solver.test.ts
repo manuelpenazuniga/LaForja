@@ -28,8 +28,30 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { reduceFraction, solveProbability } from '@/solver/probability';
+import {
+  MAX_DRAWS,
+  MAX_FLIPS,
+  MAX_SAMPLE_SPACE_SIZE,
+  reduceFraction,
+  solveProbability,
+} from '@/solver/probability';
 import type { ProbabilityProblem, SolverResult } from '@/solver/probability';
+
+/** Build an urn problem with only `draws` varying — the depth-bound parameter. */
+function urn(draws: number, overrides: Record<string, number | string | boolean> = {}): ProbabilityProblem {
+  return {
+    kind: 'combinatoric',
+    params: {
+      experiment: 'urn_draws',
+      favorable: 1,
+      unfavorable: 0,
+      draws,
+      replacement: true,
+      event: 'all_favorable',
+      ...overrides,
+    },
+  };
+}
 
 /** Assert an exact rational answer plus its decimal and a reproducible trace. */
 function expectFraction(result: SolverResult, numerator: number, denominator: number): void {
@@ -345,5 +367,119 @@ describe('solveProbability — determinism and bounded scope', () => {
 
     expect(result.supported).toBe(false);
     expect(result.value).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// REGRESSION (audit D1): the solver bounded the WIDTH of an enumeration but not
+// its DEPTH.
+//
+// orderedDrawCount() guarded the sample-space SIZE against MAX_SAMPLE_SPACE_SIZE,
+// but enumerate() recurses once per DRAW. With population = 1 and replacement the
+// ordered-draw count stays 1 for any number of draws, so the size check passed
+// while the recursion went `draws` frames deep: draws = 50000 crashed the
+// process, taking down the ground truth the entire eval is checked against.
+//
+// The bound is published (MAX_DRAWS / MAX_FLIPS) and the solver REFUSES beyond
+// it. Refusing is the required behaviour: `unverified` is a legitimate verdict,
+// a crash and a guess are not.
+// ---------------------------------------------------------------------------
+describe('solveProbability — published bounds (depth as well as width)', () => {
+  it('publishes bounds that are safe integers', () => {
+    expect(Number.isSafeInteger(MAX_DRAWS)).toBe(true);
+    expect(Number.isSafeInteger(MAX_FLIPS)).toBe(true);
+    expect(Number.isSafeInteger(MAX_SAMPLE_SPACE_SIZE)).toBe(true);
+    expect(MAX_DRAWS).toBeGreaterThan(0);
+    expect(MAX_FLIPS).toBeGreaterThan(0);
+  });
+
+  it('does not crash and returns { supported: false } for an absurd draw count', () => {
+    // The exact crash from the audit: population 1, with replacement, 50000 draws.
+    // Sample-space size is 1, so the width guard never fires.
+    const result = solveProbability(urn(50_000));
+
+    expect(result.supported).toBe(false);
+    expect(result.value).toBeUndefined();
+    expect(result.decimal).toBeUndefined();
+  });
+
+  it('refuses just beyond MAX_DRAWS and still answers at MAX_DRAWS (boundary INCLUSIVE)', () => {
+    expect(solveProbability(urn(MAX_DRAWS + 1)).supported).toBe(false);
+
+    // Every draw is favorable out of a population of 1, so the answer is 1/1.
+    expectFraction(solveProbability(urn(MAX_DRAWS)), 1, 1);
+  });
+
+  it('refuses a degenerate zero-draw urn instead of reporting a vacuous 1/1', () => {
+    // draws = 0 also reached `new Array(population)` with a population the size
+    // check had not bounded, which throws RangeError for a huge population.
+    expect(solveProbability(urn(0)).supported).toBe(false);
+    expect(solveProbability(urn(0, { favorable: 1e15, unfavorable: 0 })).supported).toBe(false);
+  });
+
+  it('refuses a non-integer or negative draw count rather than coercing it', () => {
+    expect(solveProbability(urn(2.5)).supported).toBe(false);
+    expect(solveProbability(urn(-1)).supported).toBe(false);
+    expect(solveProbability(urn(Number.NaN)).supported).toBe(false);
+    expect(solveProbability(urn(Number.POSITIVE_INFINITY)).supported).toBe(false);
+  });
+
+  it('refuses an oversized sample space (the width bound still holds)', () => {
+    // 1000 items, 3 draws with replacement = 10^9 ordered sequences.
+    expect(solveProbability(urn(3, { favorable: 1000, unfavorable: 0 })).supported).toBe(false);
+  });
+
+  it('refuses an absurd or degenerate flip count instead of enumerating it', () => {
+    const flips = (n: number, k: number): ProbabilityProblem => ({
+      kind: 'basic',
+      params: { experiment: 'fair_coin_flips', flips: n, event: 'exactly_k_heads', k },
+    });
+
+    expect(solveProbability(flips(50_000, 1)).supported).toBe(false);
+    expect(solveProbability(flips(MAX_FLIPS + 1, 1)).supported).toBe(false);
+    expect(solveProbability(flips(0, 0)).supported).toBe(false);
+    expect(solveProbability(flips(2.5, 1)).supported).toBe(false);
+  });
+
+  it('never reports a probability outside [0, 1]', () => {
+    // Sweep every supported urn shape that fits the bounds and assert the
+    // invariant a "confidently wrong" answer would break.
+    for (let population = 1; population <= 6; population += 1) {
+      for (let favorable = 0; favorable <= population; favorable += 1) {
+        for (let draws = 1; draws <= 4; draws += 1) {
+          for (const replacement of [true, false]) {
+            const result = solveProbability({
+              kind: 'combinatoric',
+              params: {
+                experiment: 'urn_draws',
+                favorable,
+                unfavorable: population - favorable,
+                draws,
+                replacement,
+                event: 'all_favorable',
+              },
+            });
+
+            if (result.supported !== true) continue;
+            expect(result.decimal ?? Number.NaN).toBeGreaterThanOrEqual(0);
+            expect(result.decimal ?? Number.NaN).toBeLessThanOrEqual(1);
+            expect(result.value?.denominator ?? 0).toBeGreaterThan(0);
+          }
+        }
+      }
+    }
+  });
+});
+
+describe('reduceFraction — totality (audit D1 sweep)', () => {
+  it('terminates on non-integer input instead of recursing forever', () => {
+    // gcd() was recursive; 1 % 0.3 never lands cleanly on 0 and NaN % NaN is NaN,
+    // so a non-integer argument spun the stack. It now declines to reduce.
+    expect(reduceFraction(1, 0.3)).toEqual({ numerator: 1, denominator: 0.3 });
+    expect(Number.isNaN(reduceFraction(Number.NaN, 2).numerator)).toBe(true);
+  });
+
+  it('still reduces large integer pairs without deep recursion', () => {
+    expect(reduceFraction(1_000_000, 2_000_000)).toEqual({ numerator: 1, denominator: 2 });
   });
 });

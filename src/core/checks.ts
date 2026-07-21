@@ -310,7 +310,10 @@ export type ReRunOutcome =
 export interface HistoryRunBatch {
   /** The ItemVersion the history was re-run against. */
   targetVersionId: string;
-  /** How many recorded checks the history contained when the batch started. */
+  /**
+   * How many recorded checks the history was expected to contain, counted
+   * INDEPENDENTLY of the array that was iterated (see reRunHistory).
+   */
   expectedCheckCount: number;
   /** How many produced an outcome. */
   completedCheckCount: number;
@@ -340,15 +343,17 @@ export interface HistoryRunBatch {
  *    failure reappears ⇒ 'regressed'. If the invariant holds ⇒ 'pass'. If the
  *    executor cannot run (crash, timeout, unknown invariantId, executor or
  *    threshold version no longer available) ⇒ 'inconclusive'.
- *  - counterexample: re-execute the recorded construction (e.g. re-apply the
- *    ambiguity's two interpretations to the repaired stem). If the construction
- *    still holds — both readings still yield different answers ⇒ 'regressed'.
- *    If it demonstrably no longer holds ⇒ 'pass'. If re-applying the readings
- *    cannot be resolved ⇒ 'inconclusive'.
- *    The supported ambiguity construction uses a versioned, deterministic
- *    executor, so the same recorded construction and item version reproduce the
- *    same result. A construction the available executor cannot resolve is
- *    'inconclusive' and blocks rather than being guessed semantically.
+ *  - counterexample: re-execute the recorded construction. For the ambiguity
+ *    construction this means RE-SOLVING both recorded readings with the bounded
+ *    solver (src/solver/probability.ts). Both readings still yielding DIFFERENT
+ *    answers ⇒ the construction still holds ⇒ 'regressed'. The two readings
+ *    converging on one answer ⇒ the construction no longer holds ⇒ 'pass'.
+ *    A recorded construction that carries no re-executable form — two readings
+ *    in natural language and nothing the solver can evaluate — is NOT
+ *    re-executable, so the honest result is 'inconclusive', which fails closed
+ *    into blocksPublish. The verdict is NEVER inferred from the wording of the
+ *    new stem: surface text is not evidence, and guessing 'pass' from it would
+ *    turn the one guarantee this engine carries into a false claim.
  *  - semantic: re-adjudicate. On success ⇒ 'readjudicated' with a REQUIRED
  *    structured `verdict` (never a hard 'pass', never a hard 'regressed'); the
  *    passport renders `verdict`, not `detail` (doc §6.4). If the adjudicator
@@ -396,11 +401,28 @@ export function reRunCheck(_check: RecordedCheck, _newVersion: unknown): ReRunOu
       };
     }
 
+    // D3: a re-adjudication that did not happen must NOT be reported as one.
+    // When the adjudicator cannot evaluate the recorded contract it returns
+    // null, and the outcome is the distinguishable 'inconclusive' member — the
+    // passport can then show "could not be re-adjudicated" instead of a verdict
+    // nobody produced. Semantic outcomes still never block (doc §5).
+    const verdict = readjudicateSemanticContract(contract.data, parsedVersion.data);
+    if (verdict === null) {
+      return {
+        originalCheckId: _check.id,
+        checkClass: 'semantic',
+        result: 'inconclusive',
+        blocksPublish: false,
+        detail:
+          'The recorded semantic judgment could not be re-adjudicated against this version: no adjudicator recognised the recorded contract.',
+      };
+    }
+
     return {
       originalCheckId: _check.id,
       checkClass: 'semantic',
       result: 'readjudicated',
-      verdict: readjudicateSemanticContract(contract.data, parsedVersion.data),
+      verdict,
       blocksPublish: false,
     };
   }
@@ -446,15 +468,35 @@ export function reRunCheck(_check: RecordedCheck, _newVersion: unknown): ReRunOu
  * batch gate. Aborted execution is marked failed, accounting mismatches are
  * incomplete, and anything short of a complete non-blocking batch fails closed.
  *
- *  - Set `expectedCheckCount` from the recorded history BEFORE running anything,
- *    and increment `completedCheckCount` per produced outcome. Stamp `startedAt`
- *    before the first check and `completedAt` when the batch ends.
- *  - `status` is 'complete' ONLY when completedCheckCount === expectedCheckCount
- *    and every expected check id appears exactly once in `outcomes`. A batch that
- *    aborted is 'failed'; one that simply produced fewer outcomes is 'incomplete'.
+ * WHY `expectedCheckCount` IS A PARAMETER AND NOT `_history.length` (do NOT
+ * "simplify" this back): deriving the expected count from the same array the
+ * loop iterates makes the count a tautology. A truncated or failed load of the
+ * recorded checks then arrives as an empty (or short) array, the loop produces
+ * exactly as many outcomes as it was handed, and the batch reports 'complete'
+ * with blocksPublish false — authorising HISTORY_CLEAN on a history that was
+ * never read. The count must therefore come from OUTSIDE the array: the caller
+ * counts the recorded checks independently (e.g. a COUNT query against the
+ * Check rows) and passes that number in. A mismatch between it and the array is
+ * evidence of a load bug and is reported as 'incomplete', which blocks.
+ *
+ * This matters most exactly where it is easiest to miss: an item only reaches
+ * REGRESSION through SUBMIT_REPAIR or DISPUTE_REPAIR, which means it MUST have
+ * had prior checks. An empty history there is a bug, not cleanliness. A
+ * genuinely empty history stays legal ONLY when the caller explicitly declares
+ * `expectedCheckCount === 0`.
+ *
+ *  - `expectedCheckCount` is supplied by the caller BEFORE anything runs, and
+ *    `completedCheckCount` counts produced outcomes. Stamp `startedAt` before
+ *    the first check and `completedAt` when the batch ends.
+ *  - `status` is 'complete' ONLY when the supplied count, the array length and
+ *    completedCheckCount all agree and every expected check id appears exactly
+ *    once in `outcomes`. A batch that aborted is 'failed'; one that simply
+ *    produced fewer outcomes, or that was handed a history disagreeing with the
+ *    declared count, is 'incomplete'.
  *  - FAIL-CLOSED aggregate: `blocksPublish` is true if ANY outcome has
- *    blocksPublish true, OR status !== 'complete'. An empty recorded history
- *    (expectedCheckCount === 0) is 'complete' and does not block.
+ *    blocksPublish true, OR status !== 'complete'. An explicitly declared empty
+ *    recorded history (expectedCheckCount === 0 AND an empty array) is
+ *    'complete' and does not block.
  *
  * DISPATCH GATE (this is the point of the batch): the caller may dispatch the
  * HISTORY_CLEAN state event ONLY when `status === 'complete'` AND every expected
@@ -465,8 +507,20 @@ export function reRunCheck(_check: RecordedCheck, _newVersion: unknown): ReRunOu
  * Reference: doc §5 ("every repair re-runs the entire history"),
  * RECORDING_GATE.md question 3.
  */
-export function reRunHistory(_history: RecordedCheck[], _newVersion: unknown): HistoryRunBatch {
-  const expectedCheckCount = _history.length;
+export function reRunHistory(
+  _history: RecordedCheck[],
+  _newVersion: unknown,
+  /**
+   * REQUIRED. The number of recorded checks the caller counted independently of
+   * `_history`. It is not optional and it has no default: a default would be
+   * `_history.length`, which is precisely the fail-open this parameter exists to
+   * close.
+   */
+  _expectedCheckCount: number,
+): HistoryRunBatch {
+  const declaredCount = Number.isSafeInteger(_expectedCheckCount) && _expectedCheckCount >= 0
+    ? _expectedCheckCount
+    : -1; // an unusable declaration can never equal a real count ⇒ incomplete ⇒ blocks
   const outcomes: ReRunOutcome[] = [];
   let aborted = false;
 
@@ -488,9 +542,13 @@ export function reRunHistory(_history: RecordedCheck[], _newVersion: unknown): H
     expectedIds.every(
       (id) => outcomeIds.filter((outcomeId) => outcomeId === id).length === 1,
     );
+  // The declared count must agree with BOTH the array it was supposed to
+  // describe and the outcomes actually produced. Checking it only against
+  // `outcomes.length` would let a truncated load through again.
   const complete =
     !aborted &&
-    completedCheckCount === expectedCheckCount &&
+    declaredCount === expectedIds.length &&
+    completedCheckCount === declaredCount &&
     allIdsAccountedFor;
   const status: HistoryRunBatch['status'] = aborted
     ? 'failed'
@@ -500,7 +558,7 @@ export function reRunHistory(_history: RecordedCheck[], _newVersion: unknown): H
 
   return {
     targetVersionId: targetVersionId(_newVersion),
-    expectedCheckCount,
+    expectedCheckCount: _expectedCheckCount,
     completedCheckCount,
     startedAt: RUNTIME_EVIDENCE_TIMESTAMP,
     completedAt: aborted ? null : RUNTIME_EVIDENCE_TIMESTAMP,
@@ -544,6 +602,20 @@ const ProbeInvariantContractSchema = z.object({
   observedValue: z.number().finite(),
 });
 
+/**
+ * The recorded ambiguity construction.
+ *
+ * `interpretation_a` / `interpretation_b` are natural language: they are what
+ * the reviewer WROTE, and they are displayed in the passport. They are NOT
+ * executable — no amount of pattern matching over them, or over the new stem,
+ * re-executes anything.
+ *
+ * `problem_a` / `problem_b` are the RE-EXECUTABLE form of those two readings:
+ * each reading expressed as a bounded-solver problem. They are optional because
+ * a reviewer may raise an ambiguity whose readings cannot be reduced to a solver
+ * problem — and when they are absent the construction simply cannot be re-run,
+ * which is reported as 'inconclusive' (fail-closed), never as a pass.
+ */
 const AmbiguityInvariantContractSchema = z
   .object({
     interpretation_a: z.string().trim().min(1),
@@ -551,6 +623,8 @@ const AmbiguityInvariantContractSchema = z
     answer_a: z.string().trim().min(1),
     answer_b: z.string().trim().min(1),
     evidence: z.string().trim().min(1),
+    problem_a: ProbabilityProblemSchema.optional(),
+    problem_b: ProbabilityProblemSchema.optional(),
   })
   .refine((contract) => contract.answer_a !== contract.answer_b, {
     message: 'the two recorded readings must yield different answers',
@@ -694,23 +768,74 @@ function runAmbiguityCheck(
     );
   }
 
-  const normalizedStem = normalizeLanguage(version.stem);
-  const explicitlyAtLeastOne = /\bal menos\b|\bat least one\b/u.test(normalizedStem);
-  const explicitlyIdentified =
-    /\b(hijo concreto|previamente identificado|hijo mayor|hijo menor|primer hijo|segundo hijo)\b/u.test(
-      normalizedStem,
-    ) ||
-    /\b(specific child|previously identified|older child|younger child|first child|second child)\b/u.test(
-      normalizedStem,
+  // BRANCH 1 — the construction has no re-executable form. There is nothing to
+  // run, so there is nothing to pass. Reading the new stem for reassuring
+  // phrases ("at least one", "a specific child", ...) is not a re-execution: it
+  // is a guess, it fails OPEN on any unrelated item whose stem happens to
+  // contain those words, and it would make the §5 guarantee false in general.
+  // Refusing to publish an unverifiable counterexample is the honest trade.
+  const { problem_a: problemA, problem_b: problemB } = contract.data;
+  if (problemA === undefined || problemB === undefined) {
+    return executableOutcome(
+      check,
+      'inconclusive',
+      'The recorded ambiguity construction has no re-executable form: its two readings exist only as prose, so they cannot be re-solved against this version.',
     );
-  const constructionStillHolds = !explicitlyAtLeastOne && !explicitlyIdentified;
-  return executableOutcome(check, constructionStillHolds ? 'regressed' : 'pass');
+  }
+
+  // The version must be a well-formed item before any verdict is claimed about it.
+  if (answerForKey(version.options, version.correctKey) === undefined) {
+    return executableOutcome(check, 'inconclusive', 'The marked answer key is not resolvable.');
+  }
+
+  // BRANCH 2 — a real re-execution: re-solve BOTH readings with the bounded
+  // solver at the recorded executor version.
+  const solvedA = solveProbability(problemA);
+  const solvedB = solveProbability(problemB);
+  if (
+    !solvedA.supported ||
+    solvedA.value === undefined ||
+    !solvedB.supported ||
+    solvedB.value === undefined
+  ) {
+    return executableOutcome(
+      check,
+      'inconclusive',
+      'At least one recorded reading is outside the bounded solver, so the construction could not be re-executed.',
+    );
+  }
+
+  const answerA = formatFraction(solvedA.value.numerator, solvedA.value.denominator);
+  const answerB = formatFraction(solvedB.value.numerator, solvedB.value.denominator);
+
+  // Two readings that still disagree ARE the counterexample: it still holds.
+  // Two readings that converge no longer produce competing answers: it is dead.
+  if (answerA !== answerB) {
+    return executableOutcome(
+      check,
+      'regressed',
+      `Re-executed: reading A resolves to ${answerA} and reading B to ${answerB}. The two readings still disagree, so the counterexample still holds.`,
+    );
+  }
+  return executableOutcome(
+    check,
+    'pass',
+    `Re-executed: both recorded readings now resolve to ${answerA}, so the construction no longer produces two competing answers.`,
+  );
 }
 
+/**
+ * Re-adjudicate a recorded semantic judgment against the target version.
+ *
+ * Returns null when no adjudicator recognises the recorded contract. That is
+ * NOT a verdict and must not be dressed up as one: emitting a 'modified'
+ * verdict with a rationale saying "it was re-adjudicated" would record a
+ * re-adjudication that never ran, and the passport would show it as clean.
+ */
 function readjudicateSemanticContract(
   contract: Record<string, unknown>,
   version: VersionUnderCheck,
-): ReadjudicatedVerdict {
+): ReadjudicatedVerdict | null {
   const distractor = contract.distractor;
   if (typeof distractor === 'string' && distractor.trim() !== '') {
     const remainsInItem = version.options.some(
@@ -725,11 +850,7 @@ function readjudicateSemanticContract(
     };
   }
 
-  return {
-    status: 'modified',
-    rationale: 'The recorded semantic judgment was re-adjudicated against the target version.',
-    adjudicatedAt: RUNTIME_EVIDENCE_TIMESTAMP,
-  };
+  return null;
 }
 
 function answerForKey(options: string[], correctKey: string): string | undefined {
@@ -745,16 +866,6 @@ function formatFraction(numerator: number, denominator: number): string {
 
 function normalizeAnswer(answer: string): string {
   return answer.trim().replace(/\s+/gu, '').toLowerCase();
-}
-
-function normalizeLanguage(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/gu, ' ')
-    .trim();
 }
 
 function targetVersionId(newVersion: unknown): string {

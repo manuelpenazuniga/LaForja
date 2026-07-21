@@ -16,7 +16,20 @@
  *       OR ratio <= LENGTH_LOW   (correct option conspicuously SHORTER)
  *
  *  (2) lexical_overlap_score = |tokens(stem) ∩ tokens(correct)| / |tokens(correct)|
- *      Case-folded, punctuation-stripped, stopwords removed (STOPWORDS below).
+ *      Tokenized by whitespace after trim, then each token is normalized:
+ *        - case-folded;
+ *        - every run of characters that are neither letters nor numbers is
+ *          REPLACED by a single neutral separator (TOKEN_SEPARATOR, "·") rather
+ *          than deleted, so distinct tokens stay distinct;
+ *        - leading and trailing separators are dropped, so edge punctuation is
+ *          effectively stripped ("muestral," and "muestral" normalize alike).
+ *      Punctuation is normalized WITHIN a token and NEVER splits it into two:
+ *      "3/8" is the single token "3·8", which is distinct from the token "38".
+ *      This is load-bearing in a mathematics product: deleting the separator
+ *      would collide the fraction 1/4 with the integer 14 and fabricate a cue
+ *      leak on a clean numeric item.
+ *      Stopwords (STOPWORDS below) are removed after normalization, and the
+ *      comparison is over SETS of unique tokens.
  *      FLAG (lexical_overlap_flag = true) when score >= OVERLAP_HIGH
  *      (correct answer echoes the stem — a cue leak).
  */
@@ -99,9 +112,34 @@ function whitespaceTokens(value: string): string[] {
   return trimmed === '' ? [] : trimmed.split(/\s+/u);
 }
 
+/**
+ * Neutral in-token separator. Published as part of formula (2): punctuation is
+ * replaced by this character, never deleted, so "3/8" ("3·8") cannot collide
+ * with "38". It is itself neither a letter nor a number, so a token that already
+ * contains it normalizes consistently.
+ */
+export const TOKEN_SEPARATOR = '·';
+
+/** One or more characters that are neither letters nor numbers, in any script. */
+const NON_ALPHANUMERIC_RUN = /[^\p{L}\p{N}]+/gu;
+
+/** Separators at the very start or end of a token, which carry no information. */
+const EDGE_SEPARATORS = /^·+|·+$/g;
+
+/**
+ * Normalize a single whitespace token for formula (2). Never returns more than
+ * one token: punctuation is collapsed to a separator, not split on.
+ */
+function normalizeToken(token: string): string {
+  return token
+    .toLowerCase()
+    .replace(NON_ALPHANUMERIC_RUN, TOKEN_SEPARATOR)
+    .replace(EDGE_SEPARATORS, '');
+}
+
 function contentTokenSet(value: string): Set<string> {
   const tokens = whitespaceTokens(value)
-    .map((token) => token.toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''))
+    .map(normalizeToken)
     .filter((token) => token !== '' && !STOPWORDS.has(token));
 
   return new Set(tokens);

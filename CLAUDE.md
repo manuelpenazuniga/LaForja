@@ -61,6 +61,11 @@ boundary, not a style preference:
 
 Claude must **never** implement a Codex-owned internal, even when it is a five-line function.
 
+**One narrow exception, and it is not a loophole:** where a Codex-owned internal has already **shipped and is
+green**, Claude may fix a defect in it. A shipped fail-open is a bug, not a stub, and leaving a known bug in
+place to respect an ownership line would be the worse outcome. This never licenses writing a body that is
+still `TODO(codex)` — for those, Claude may correct only the **spec comment**, when the spec is what is wrong.
+
 ### File ownership (verified against the current tree)
 
 **Claude-owned — implemented, treat as stable and import from it:**
@@ -92,18 +97,31 @@ Claude must **never** implement a Codex-owned internal, even when it is a five-l
 | `src/app/api/defense/route.ts` | session, rate limit, Zod, two-phase response contract | `issueDefenseQuestions`, `scoreDefenseAnswers` |
 | `src/app/api/passport/[itemId]/route.ts` | session, rate limit, param validation, existence check | calls `buildPassport` |
 
-**Codex-owned — function bodies currently `throw new Error('TODO(codex): …')`:**
+**Codex-owned — IMPLEMENTED and green. Treat these as shipped code, not stubs. You
+may fix a defect in them (a shipped fail-open is a bug, not a stub), but do not
+rewrite them and do not describe them as unimplemented anywhere:**
+
+| Path | Implemented | Suite |
+|---|---|---|
+| `src/core/stateMachine.ts` | `TRANSITIONS` (12), `reduce`, `canTransition` | `tests/stateMachine.test.ts` — all 96 state/event pairs asserted |
+| `src/solver/probability.ts` | `reduceFraction`, `solveProbability` | `tests/solver.test.ts` — golden values match the labeled smoke set |
+| `src/probe/itemProbe.ts` | `runItemProbe`, published thresholds | `tests/itemProbe.test.ts` |
+| `src/core/checks.ts` | `reRunCheck`, `reRunHistory` — fail-closed, batch accounting | `tests/checks.history.test.ts` |
+
+None of these four contains a `TODO(codex)` marker any more. If you find a doc or
+comment calling them stubs, that doc is the bug.
+
+**Codex-owned — still stubs, bodies `throw new Error('TODO(codex): …')`. Every one
+of them either is a model call or depends on one, and there is no runtime API key
+(§12); `buildPassport` is the one that is merely unwritten rather than blocked, since
+it assembles already-persisted rows:**
 
 | Path | Codex implements |
 |---|---|
-| `src/core/stateMachine.ts` | `TRANSITIONS` table, `reduce`, `canTransition` |
-| `src/core/checks.ts` | `reRunCheck`, `reRunHistory` |
-| `src/openai/client.ts` | `callModel` (Responses API, Zod-validate, retry once, telemetry) |
+| `src/openai/client.ts` | `callModel` (Responses API, Zod-validate, retry once, telemetry) over the injectable `ModelTransport` |
 | `src/reviewers/ambiguity.ts` · `discipline.ts` · `distractors.ts` | the three reviewer calls |
 | `src/reviewers/orchestrator.ts` | `runGauntlet` — concurrent calls, per-reviewer timeout |
 | `src/reviewers/adjudication.ts` | `adjudicate` |
-| `src/solver/probability.ts` | `reduceFraction`, `solveProbability` |
-| `src/probe/itemProbe.ts` | `runItemProbe` |
 | `src/defense/viva.ts` | `generateDefenseQuestions`, `scoreDefense` (`meetsPublishThreshold` is already Claude-provided and pure) |
 | `src/passport/passport.ts` | `buildPassport` |
 | `src/eval/run.ts` | `runConfig`, `writeResults`, `main` (`RESULTS_DIR` is fixed) |
@@ -198,8 +216,16 @@ paraphrase it):
 
 **Present tense only for what actually works today. Everything else is labeled "next."** This applies to
 README, UI copy, submission text and video narration. Nothing is described as working while it is a
-`TODO(codex)` stub — and today **most of the runtime is a stub**, so most of it must be labeled "next". The
+`TODO(codex)` stub — and today **every model-backed stage is a stub**, so all of it must be labeled "next". The
 repositioning in §0 changes the framing only; it must not smuggle in a single new claim.
+
+**The rule is symmetric, and this half is easy to forget.** Calling an implemented,
+tested module a stub is just as false a statement about the repo as claiming a stub
+works — it is understatement, but it is still inaccuracy, and a reader who checks
+will trust the document less either way. The four modules in the §2 implemented table
+run today and are described in the present tense. Correcting an understatement must
+never be allowed to slide into the opposite overclaim: the deterministic core running
+in tests is **not** the pipeline running, and must never be narrated as one.
 
 Forbidden phrasings — these are not stylistic preferences, they were audit findings:
 
@@ -368,22 +394,57 @@ npm run secretscan   # node scripts/secret-scan.mjs   (add -- --all for the whol
 
 ## 11. Current state, stated plainly
 
-**Green baseline — keep it that way.** `tsc --noEmit` is clean. `npm test` reports **285 passed, 101 skipped**
-across 13 test files (11 passing files, 2 fully skipped). The 101 skips are `describe.skip`/`it.skip` with real
-executable bodies — they are the Codex punch-list, not dead code.
+**Green baseline — keep it that way.** `tsc --noEmit` is clean. `npm test` reports **446 passed, 136 skipped**
+across 17 test files (15 passing files, 2 fully skipped: `orchestrator`, `adjudication`; `callModel` and `viva`
+run only the parts that do not depend on a Codex stub). The 136
+skips are `describe.skip`/`it.skip` with real executable bodies — every one is a Codex-owned suite written out
+in full and waiting on its implementation, not dead code. Never unskip one, never weaken an assertion to make
+something pass, and if a fix changes behaviour a test pins, update the test in lockstep and add a regression
+test for the defect.
 
-**Works today:** `src/core/types.ts`, `src/config/models.ts` (all four compliance gates),
-`src/reviewers/schemas.ts`, `src/reviewers/guardrails.ts`, `src/db/client.ts`, `src/demo/isolation.ts`,
+**Works today — contracts and scaffolding:** `src/core/types.ts`, `src/config/models.ts` (all four compliance
+gates), `src/reviewers/schemas.ts`, `src/reviewers/guardrails.ts`, `src/db/client.ts`, `src/demo/isolation.ts`,
 `src/eval/types.ts`, the Prisma schema and seed, the reviewer prompt text, all 16 smoke fixtures, the app
 shell + `page.tsx` + `StudioClient.tsx` as presentation, `POST /api/session` end to end, the HTTP envelopes
 of the other four routes, the secret scanner, the git hook and CI.
 
-**Next (stub or absent), and must be described as "next" everywhere:** everything in the section 2 Codex
-table throws `TODO(codex)` — the state machine, history re-run, the OpenAI client, all three reviewers,
-orchestration, adjudication, the solver, the item probe, defense generation and scoring, passport assembly,
-the eval runner. The gauntlet / repair / defense / passport routes return their stub error from the Codex
-function inside them. There is **no `/api/rerun` route, and there must never be one**: the history re-run
-happens inside `POST /api/repair`, so a second endpoint would execute the whole history twice and write
-duplicate `HistoryReRun` rows. `StudioClient.tsx` no longer names it, and `tests/studioRoutes.test.ts`
-fails if it — or `/api/defense/questions`, `/api/defense/score`, or a query-string passport — comes back.
-`eval/results/` contains only `.gitkeep` and a README — **no eval artifact has been produced**.
+**Works today — implemented mechanism:** `src/core/stateMachine.ts` (12-transition lifecycle, 96 pairs
+asserted), `src/solver/probability.ts` (bounded solver, exact reduced fractions plus trace, `unsupported`
+outside scope), `src/probe/itemProbe.ts` (deterministic cue probe at the published thresholds) and
+`src/core/checks.ts` (fail-closed history re-run with batch accounting). These are green and are described in
+the present tense.
+
+**Next (stub or absent), and must be described as "next" everywhere:** the OpenAI client, all three reviewers,
+orchestration, adjudication, defense generation and scoring, passport assembly, the eval runner. The gauntlet /
+repair / defense / passport routes return their stub error from the Codex function inside them. There is **no
+`/api/rerun` route, and there must never be one**: the history re-run happens inside `POST /api/repair`, so a
+second endpoint would execute the whole history twice and write duplicate `HistoryReRun` rows.
+`StudioClient.tsx` no longer names it, and `tests/studioRoutes.test.ts` fails if it — or
+`/api/defense/questions`, `/api/defense/score`, or a query-string passport — comes back.
+
+---
+
+## 12. The API-key constraint — the thing that shapes the whole delivery
+
+**There is no runtime OpenAI API key.** Not pending, not deferred for polish: one was never available to this
+build. State it plainly wherever delivery status is discussed, and never imply a run happened.
+
+What follows from it, and none of it may be softened:
+
+- The reviewers, the separate adjudication step, the written defense and the eval runner **cannot be
+  executed**. That is why they are stubs; it is not a sequencing accident.
+- **The eval has produced no artifacts.** `eval/results/` contains only `.gitkeep` and a README. No number in
+  any document came from a real model call.
+- **Recording-gate questions 4 and 5 are currently unanswerable** — question 4 (raw baseline vs gauntlet
+  results) and question 5 (cost and latency of that run). There is no run to report, so per
+  `RECORDING_GATE.md` the gate is not passed and we build instead of recording.
+
+**The mitigation, stated at its true size.** `callModel` takes an injectable `ModelTransport` (defaulting to
+`openaiTransport`), so the whole contract around the network hop — Zod validation, retry-once, timeouts, the
+`assertRuntimeCompliance` gate, telemetry, and every downstream consumer — is specifiable and testable offline
+against a fake transport. Everything except the network hop is verifiable without a key, and the system runs
+the moment a key exists.
+
+**This is a seam, not a result.** An injectable transport proves the wiring is sound; it proves nothing about
+what GPT-5.6 actually does to a defective item. Never present offline verification as equivalent to having run
+the gauntlet, and never let "it would run the moment a key exists" drift into "it runs".

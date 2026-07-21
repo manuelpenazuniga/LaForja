@@ -16,8 +16,12 @@
  *
  * TOKENIZATION CONTRACT (pinned below, in this order — it is load-bearing):
  *   a. split on whitespace after trim;
- *   b. case-fold and strip punctuation WITHIN each token — never split on it, so the
- *      option "3/8" is ONE token ("38"), not the two tokens "3" and "8";
+ *   b. case-fold, then REPLACE each run of non-alphanumeric characters WITHIN a token
+ *      with a single neutral separator (TOKEN_SEPARATOR, "·") and drop separators at
+ *      the token's edges. Punctuation is never SPLIT on, so the option "3/8" is ONE
+ *      token ("3·8"), not the two tokens "3" and "8"; and it is never DELETED, so
+ *      "3/8" stays distinct from the integer "38" and "1/4" from "14". Edge
+ *      punctuation still effectively vanishes ("muestral," matches "muestral");
  *   c. length formula (1) counts tokens after (a) only — no stopword removal;
  *   d. overlap formula (2) removes STOPWORDS and compares SETS of unique tokens,
  *      so the denominator is the number of DISTINCT content tokens in the correct
@@ -38,7 +42,12 @@ import {
 import type { ProbeInput } from '@/probe/itemProbe';
 
 import clean001 from '@/eval/smoke/dev/clean-001.json';
+import clean003 from '@/eval/smoke/dev/clean-003.json';
+import clean002 from '@/eval/smoke/holdout/clean-002.json';
+import clean004 from '@/eval/smoke/holdout/clean-004.json';
 import cueLeak001 from '@/eval/smoke/dev/cue-leak-001.json';
+import cueLeak003 from '@/eval/smoke/dev/cue-leak-003.json';
+import cueLeak004 from '@/eval/smoke/holdout/cue-leak-004.json';
 
 /** A stem with no content token in common with the synthetic options below. */
 const NEUTRAL_STEM = 'Un enunciado neutro sin vocabulario compartido con las alternativas.';
@@ -308,7 +317,7 @@ describe('item_probe — lexical_overlap_score, OVERLAP_HIGH boundary (0.5)', ()
     expect(result.lexical_overlap_flag).toBe(false);
   });
 
-  it('treats a fraction option as ONE token: punctuation is stripped, never split', () => {
+  it('treats a fraction option as ONE token: punctuation is normalized, never split', () => {
     // "3/8" must not become the tokens "3" and "8", or the stem's "3" would create
     // a phantom overlap on a perfectly clean numeric item.
     const result = runItemProbe(
@@ -319,6 +328,70 @@ describe('item_probe — lexical_overlap_score, OVERLAP_HIGH boundary (0.5)', ()
     expect(result.lexical_overlap_flag).toBe(false);
     expect(result.answer_length_ratio).toBe(1);
     expect(result.answer_length_flag).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // REGRESSION (audit D2): the separator inside a token must be REPLACED, not
+  // DELETED. Deleting it collapsed "1/4" to "14" and "3/8" to "38", so a stem
+  // that merely mentioned the integer 14 scored an overlap of 1.0 against a
+  // correct option of 1/4 and raised the cue-leak flag on a clean item. In a
+  // mathematics product that is a live false-positive generator, and false
+  // positives on clean items are exactly what the eval measures.
+  // -------------------------------------------------------------------------
+  it('does NOT collide the fraction "1/4" with the integer "14" in the stem', () => {
+    const result = runItemProbe(
+      input(
+        'A spinner is divided into 14 sectors of equal area. What is the probability of landing on any one sector?',
+        ['1/4', '1/7', '1/2', '1/3'],
+        'A',
+      ),
+    );
+
+    // Correct option has exactly one content token ("1·4"); the stem contains
+    // "14" but not "1·4", so nothing is shared.
+    expect(result.lexical_overlap_score).toBe(0);
+    expect(result.lexical_overlap_flag).toBe(false);
+  });
+
+  it('does NOT collide the fraction "3/8" with the integer "38" in the stem', () => {
+    const result = runItemProbe(
+      input('A bag holds 38 counters of equal size.', ['3/8', '5/8', '1/8', '7/8'], 'A'),
+    );
+
+    expect(result.lexical_overlap_score).toBe(0);
+    expect(result.lexical_overlap_flag).toBe(false);
+  });
+
+  it('still MATCHES a fraction against the same fraction in the stem (no echo is lost)', () => {
+    // The other direction of the same defect: normalization must stay lossless
+    // enough that a genuine echo is still detected.
+    const result = runItemProbe(
+      input('The probability of the first draw is 3/8. What is it for the second?', [
+        '3/8',
+        '5/8',
+        '1/8',
+        '7/8',
+      ], 'A'),
+    );
+
+    expect(result.lexical_overlap_score).toBe(1);
+    expect(result.lexical_overlap_flag).toBe(true);
+  });
+
+  it('keeps distinct punctuated tokens distinct while remaining ONE token each', () => {
+    // "P(A)" and "PA" must not be the same content token, and neither may split.
+    const collidesUnderDeletion = runItemProbe(
+      input('Consider the quantity PA in the diagram.', [
+        'uno dos tres cuatro',
+        'P(A) beta gamma delta',
+        'cinco seis siete ocho',
+        'nueve diez once doce',
+      ], 'B'),
+    );
+
+    expect(collidesUnderDeletion.lexical_overlap_score).toBe(0);
+    expect(collidesUnderDeletion.lexical_overlap_flag).toBe(false);
+    expect(collidesUnderDeletion.answer_length_ratio).toBe(1);
   });
 });
 
@@ -365,8 +438,55 @@ describe('item_probe — real smoke-set fixtures', () => {
     expect(result.lexical_overlap_flag).toBe(true);
   });
 
-  it('clean-001 raises NEITHER flag (the false-positive guard)', () => {
-    const result = runItemProbe(input(clean001.stem, clean001.options, clean001.correct_key));
+  it('cue-leak-003 raises BOTH flags (ratio 20/8.75, overlap 9/13)', () => {
+    // Token counts: 5, 20 (correct, option B), 6, 4 => sum 35, mean 8.75.
+    //   ratio   = 20 / 8.75 = 2.286 >= LENGTH_HIGH.
+    // Content tokens of option B (unique, stopwords removed) = {that, two, events,
+    //   independent, so, probability, event, b, does, not, change, when, occurs} = 13.
+    //   Note "that" is NOT a stopword in the published list; "are/the/of/a" are.
+    // Echoed by the stem: {that, two, events, probability, event, b, does, when,
+    //   occurs} = 9  =>  9 / 13 = 0.692 >= OVERLAP_HIGH.
+    const result = runItemProbe(
+      input(cueLeak003.stem, cueLeak003.options, cueLeak003.correct_key),
+    );
+
+    expect(result.answer_length_ratio).toBeCloseTo(20 / 8.75, 10);
+    expect(result.answer_length_flag).toBe(true);
+    expect(result.lexical_overlap_score).toBeCloseTo(9 / 13, 10);
+    expect(result.lexical_overlap_flag).toBe(true);
+  });
+
+  it('cue-leak-004 raises BOTH flags (ratio 25/8, overlap 10/15)', () => {
+    // Token counts: 3, 25 (correct, option B), 2, 2 => sum 32, mean 8.
+    //   ratio   = 25 / 8 = 3.125 >= LENGTH_HIGH.
+    // Content tokens of option B = {set, all, possible, outcomes, experiment, that,
+    //   faces, 1, 2, 3, 4, 5, 6, fair, die} = 15. The digit tokens arrive as "1,",
+    //   "2," ... in both stem and option; edge punctuation is dropped, so they
+    //   normalize to bare "1", "2" ... and still match.
+    // Echoed by the stem: {experiment, faces, 1, 2, 3, 4, 5, 6, fair, die} = 10
+    //   => 10 / 15 = 0.667 >= OVERLAP_HIGH.
+    const result = runItemProbe(
+      input(cueLeak004.stem, cueLeak004.options, cueLeak004.correct_key),
+    );
+
+    expect(result.answer_length_ratio).toBeCloseTo(25 / 8, 10);
+    expect(result.answer_length_flag).toBe(true);
+    expect(result.lexical_overlap_score).toBeCloseTo(10 / 15, 10);
+    expect(result.lexical_overlap_flag).toBe(true);
+  });
+
+  // The false-positive guard. Every clean fixture answers with a single-token
+  // fraction, which is precisely the shape the D2 collision attacked: under the
+  // old "delete the separator" normalization, clean-003's correct answer "1/3"
+  // became "13" and would have collided with any stem mentioning 13 (its stem
+  // mentions 12), and clean-004's "4/13" became "413". None of these may flag.
+  it.each([
+    ['clean-001', clean001],
+    ['clean-002', clean002],
+    ['clean-003', clean003],
+    ['clean-004', clean004],
+  ])('%s raises NEITHER flag (ratio 1.000, overlap 0.000)', (_id, fixture) => {
+    const result = runItemProbe(input(fixture.stem, fixture.options, fixture.correct_key));
 
     // All four options are single-token fractions => ratio exactly 1.
     expect(result.answer_length_ratio).toBe(1);

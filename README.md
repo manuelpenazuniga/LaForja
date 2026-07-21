@@ -16,8 +16,9 @@ from — and deliberately built to carry no dependency on that exam. The demo di
 is **probability**, a universal high-school/college topic where ambiguous wording and
 weak distractors are endemic.
 
-The paragraph above describes a design. The runtime that would execute it is almost
-entirely unimplemented — read the status note before anything else.
+The paragraph above describes a design. Its deterministic core is implemented and
+tested; every model-backed stage is still unimplemented — read the status note before
+anything else.
 
 > **Role of the AI (the only authorized formulation):** the AI does not generate the
 > initial item and does not hand over a canonical solution to copy. It returns
@@ -27,28 +28,68 @@ entirely unimplemented — read the status note before anything else.
 
 ### Read this before anything else — repository status
 
-This repository is **scaffolding plus contracts**, not a working product yet. Every
-row of the [evidence matrix](#evidence-matrix) is currently **unchecked**, so under
-the project language rule (doc §2) this README describes almost everything as
-**next**, not as something that works today.
+This repository is **contracts plus an implemented deterministic core**, not a
+working product yet. Every row of the [evidence matrix](#evidence-matrix) is
+currently **unchecked**, because every row requires an artifact — a URL, a raw
+result file, a recorded diff — that does not exist. Under the project language rule
+(doc §2), present tense below is used **only** where the code runs today, and
+everything else is labeled **next**. That rule cuts both ways: calling an
+implemented, tested module a stub would be as false as the reverse.
 
 Concretely, as of this commit:
 
-- What **exists and runs today**: TypeScript types and the state/check/rubric
-  vocabulary (`src/core/types.ts`), Zod evidence-contract schemas
-  (`src/reviewers/schemas.ts`), the GPT-5.6 compliance guard
-  (`src/config/models.ts`), prompt text and guardrail preambles, the Prisma data
-  model (`prisma/schema.prisma`, `prisma/seed.ts`), eval types and all 16 authored
-  smoke fixtures (`src/eval/smoke/`), small pure helpers
-  (`reduceFraction`, `meetsPublishThreshold`, `toJson`/`fromJson`), and the test
-  suite (285 passing, 101 skipped by design).
-- What is a **stub**: every runtime behavior. The reviewers, the orchestrator, the
-  separate adjudication step, the bounded solver, the deterministic item probe, the
-  state machine reducer, the history re-run, the defense scorer, the passport
-  builder and the eval runner are all `TODO(codex)` stubs that throw when called.
-  Grep the punch-list with `grep -rn "TODO(codex)" src`.
+- What **exists and runs today** — contracts and scaffolding: TypeScript types and
+  the state/check/rubric vocabulary (`src/core/types.ts`), Zod evidence-contract
+  schemas (`src/reviewers/schemas.ts`), the GPT-5.6 compliance guard
+  (`src/config/models.ts`), prompt text and guardrail preambles, demo isolation and
+  rate limiting (`src/demo/isolation.ts`), the Prisma data model
+  (`prisma/schema.prisma`, `prisma/seed.ts`), eval types and all 16 authored smoke
+  fixtures (`src/eval/smoke/`), and `POST /api/session` end to end.
+- What **exists and runs today** — four implemented, tested mechanism modules, no
+  longer stubs:
+  - `src/core/stateMachine.ts` — the 12-transition lifecycle. `reduce` and
+    `canTransition` execute; the suite asserts all 96 state/event pairs, so the 84
+    illegal ones are pinned as illegal, not merely undocumented.
+  - `src/solver/probability.ts` — the bounded probability solver, returning exact
+    reduced fractions with a reasoning trace, and `unsupported` outside its scope.
+    Its golden values match the labeled smoke set.
+  - `src/probe/itemProbe.ts` — the deterministic cue probe, with the published
+    thresholds (`LENGTH_HIGH` 1.4, `LENGTH_LOW` 0.6, `OVERLAP_HIGH` 0.5).
+  - `src/core/checks.ts` — the history re-run engine: `reRunCheck` dispatches each
+    recorded check to a versioned executor and `reRunHistory` accounts for every
+    expected check in a batch. It is **fail-closed**: an inconclusive re-run, an
+    aborted batch or an accounting mismatch blocks publication rather than failing
+    open.
+- What is still **next** — every model-backed stage, plus passport assembly: the
+  model-call wrapper (`callModel`), the three reviewers, the orchestrator, the
+  separate adjudication step, the written defense generation and rubric scoring, the
+  passport builder and the eval runner are `TODO(codex)` stubs that throw when
+  called. The `gauntlet`, `repair`, `defense` and `passport` API routes have working
+  envelopes — session, rate limit, Zod, ownership and immutability guards — but
+  return the stub error from the Codex function inside them. Grep the punch-list
+  with `grep -rn "TODO(codex)" src`.
 - There is **no deployed URL, no recorded run, no eval result file and no video**
   yet.
+
+**The constraint that shapes this delivery: there is no runtime OpenAI API key.**
+Not a scheduling problem or a decision left for later — a key was never available to
+this build. Everything that requires a model call therefore cannot be executed at
+all: the three reviewers, the separate adjudication step, the written defense and
+the eval runner. Two direct consequences, stated without spin:
+
+- The eval has produced **no artifacts**. `eval/results/` contains only `.gitkeep`
+  and a README.
+- Recording-gate questions **4** (raw baseline vs gauntlet results) and **5** (cost
+  and latency of that run) are **currently unanswerable**. They are not deferred
+  pending polish; there is no run to report.
+
+The mitigation is real but strictly bounded. `callModel` takes an injectable
+transport (`ModelTransport`, defaulting to `openaiTransport`), so validation,
+retry-once, timeout, telemetry and every downstream consumer can be exercised
+offline against a fake transport — everything except the network hop is verifiable
+without a key, and the system runs the moment one exists. **That is not the same as
+having run it.** No measurement in this repository was produced by a real model
+call, and none may be narrated as if it were.
 
 Nothing below should be read as a claim that the gauntlet has found anything. It has
 not been run.
@@ -153,10 +194,10 @@ Original item + author rationale
 | Distractor reviewer | `src/reviewers/distractors.ts` | `reviewDistractors` | Prompt written; call is a `TODO(codex)` stub |
 | Concurrent orchestration | `src/reviewers/orchestrator.ts` | `runGauntlet` | `TODO(codex)` stub |
 | Separate adjudication step | `src/reviewers/adjudication.ts` | `adjudicate` | `TODO(codex)` stub |
-| Deterministic item probe | `src/probe/itemProbe.ts` | `runItemProbe` | Thresholds published (`LENGTH_HIGH` 1.4, `LENGTH_LOW` 0.6, `OVERLAP_HIGH` 0.5); function is a `TODO(codex)` stub |
-| Bounded discipline verifier | `src/solver/probability.ts` | `solveProbability` | `reduceFraction` works; solver is a `TODO(codex)` stub |
-| State machine | `src/core/stateMachine.ts` | `reduce`, `canTransition` | Transition table and error type declared; reducer is a `TODO(codex)` stub |
-| History re-run | `src/core/checks.ts` | `reRunCheck`, `reRunHistory` | `TODO(codex)` stub |
+| Deterministic item probe | `src/probe/itemProbe.ts` | `runItemProbe` | **Implemented and tested** — published thresholds (`LENGTH_HIGH` 1.4, `LENGTH_LOW` 0.6, `OVERLAP_HIGH` 0.5) |
+| Bounded discipline verifier | `src/solver/probability.ts` | `solveProbability` | **Implemented and tested** — exact reduced fractions + trace; `unsupported` outside scope |
+| State machine | `src/core/stateMachine.ts` | `reduce`, `canTransition` | **Implemented and tested** — 12 transitions, all 96 state/event pairs asserted |
+| History re-run | `src/core/checks.ts` | `reRunCheck`, `reRunHistory` | **Implemented and tested** — fail-closed, with batch accounting |
 | Written defense + rubric | `src/defense/viva.ts` | `generateDefenseQuestions`, `scoreDefense` | `meetsPublishThreshold` works; model-backed scoring is a `TODO(codex)` stub |
 | Item passport | `src/passport/passport.ts` | `buildPassport` | `TODO(codex)` stub |
 | Model call wrapper | `src/openai/client.ts` | `callModel`, `delimitItem`, `promptHash` | Delimiters defined; the call is a `TODO(codex)` stub |
@@ -176,8 +217,11 @@ lives in `src/core/types.ts` (`STATE_EVENTS`, `Transition`) and
 | Re-executable counterexample | a concrete interpretation and the answer it produces | The construction is re-executed on v2; if it still holds, the version does not publish |
 | Semantic judgment | plausibility of a distractor | **Re-adjudicated** on every version; never described as an absolute guarantee; shown in the passport |
 
-The authorized wording of the guarantee — this is the **design contract, not a
-statement about running code**, because the re-run is still a stub:
+The authorized wording of the guarantee. The **execution half is implemented**:
+`reRunHistory` in `src/core/checks.ts` re-runs the recorded history and fails closed.
+The **re-adjudication half is still next**, because it is a model call and no key
+exists — so this remains a design contract end to end, not yet a statement about a
+system that has run:
 
 > *Every repair re-runs all recorded counterexamples and checks. The system
 > guarantees execution of the history and non-regression of deterministic
@@ -205,9 +249,15 @@ the calls do not run yet):
 | Shared bounded call wrapper (Zod-validate, retry once, fail readable, log) | `src/openai/client.ts` | `callModel` |
 
 **Sample run log: `<PLACEHOLDER — eval/results/sample-run.log, not yet generated>`.**
-No run log exists because no model call has been made from this repo. When one
-exists it will show, per call: exact model id, prompt version, prompt hash, latency
-and tokens — the fields declared on `ModelCall` in `prisma/schema.prisma`.
+No run log exists because **no model call has ever been made from this repo — there
+is no runtime API key**. When one exists it will show, per call: exact model id,
+prompt version, prompt hash, latency and tokens — the fields declared on `ModelCall`
+in `prisma/schema.prisma`.
+
+`callModel` accepts an injectable `ModelTransport` (default `openaiTransport`), which
+is what lets the surrounding contract — Zod validation, retry-once, timeout, the
+compliance gate and telemetry — be specified and tested against a fake transport
+without a key. The network hop itself remains unexercised.
 
 **No model id is ever hardcoded in source.** Every id is read from env through
 `src/config/models.ts`. That module is written and executable today:
@@ -239,9 +289,10 @@ Role split, applied strictly and visible in the repo:
   evidence contracts, the check taxonomy and its three different promises, the state
   machine and its approved transitions, the schemas, the smoke-set format and
   fixtures, the compliance guard, tooling, docs and the test skeletons.
-- **Codex implements the internals:** state machine reducer, reviewer calls, the
-  bounded solver, the separate adjudication step, the deterministic item probe, the
-  defense rubric scoring, the passport builder and the eval runner.
+- **Codex implements the internals.** Landed and green: the state machine reducer,
+  the bounded solver, the deterministic item probe and the history re-run engine.
+  Still open: the reviewer calls, the separate adjudication step, the defense rubric
+  scoring, the passport builder and the eval runner.
 
 Every implementation point Codex owns is marked in-place with a precise
 `// TODO(codex): <spec>` comment that states the intended behavior, not just the
@@ -254,13 +305,21 @@ grep -rn "TODO(codex)" src
 The test suite is the second half of that punch-list. Tests covering already-working
 code must pass; tests covering Codex-owned stubs are written out in full but marked
 `describe.skip` / `it.skip`, so CI stays green and Codex's job is to delete the
-`.skip`. The `tests/` directory exists and the suite runs green: **285 tests pass and
-101 are skipped** — those 101 skips are exactly the Codex punch-list.
+`.skip`. The suite runs green: **446 tests pass and 136 are skipped** across 17 files.
+Every one of those 136 skips is a Codex-owned suite, written out in full and waiting
+on its implementation — two files are fully skipped (`orchestrator`, `adjudication`),
+while `callModel` and `viva` are skipped except for the parts that do not depend on a
+Codex stub (`callModel` still runs the `openaiTransport` compliance guard for real). The
+four modules that landed took their suites with them: `stateMachine`, `solver`,
+`itemProbe` and `checks.history` now run for real.
 
 ## 7. Evals
 
-**Nothing has been evaluated yet.** This section describes the harness design and the
-reporting rules it must follow; no result file exists.
+**Nothing has been evaluated yet, and it cannot be until a key exists.** The eval is
+three configurations of model calls; with no runtime API key there is nothing to run
+and `eval/results/` is empty. This section describes the harness design and the
+reporting rules it must follow. No result file exists, so no number below has a value
+attached to it — the counts named here are the shape of the report, not findings.
 
 - **Labeled smoke set** — never called a gold set. **16 original items are required**
   (4 clean, 4 ambiguous, 4 with a disciplinary error and a source, 4 with cue leak or
@@ -312,11 +371,15 @@ Notes, so the commands are not oversold:
   least one is a boy" gives 1/3; "a specific child is a boy" gives 1/2 — two readings,
   two answers).
 - `npm run dev` serves the root layout, the landing page and the studio shell. The
-  page renders, but every action it offers is wired to a `TODO(codex)` stub, so the
-  end-to-end flow is **next**. The API routes under `src/app/api/` exist as
-  request/response scaffolding; their handler bodies are **next**.
-- `npm run test` runs the suite: 285 pass, 101 are intentionally `describe.skip` /
+  page renders and `POST /api/session` works, but every action that needs a model
+  call is wired to a `TODO(codex)` stub, so the end-to-end flow is **next**. The
+  other API routes under `src/app/api/` have working envelopes — session, rate
+  limit, Zod, guards — and stub handler bodies.
+- `npm run eval` throws: the runner is a stub, and there is no API key to run it
+  against.
+- `npm run test` runs the suite: 446 pass, 136 are intentionally `describe.skip` /
   `it.skip` (the Codex punch-list). Those skipped bodies are written out in full.
+  `npm run typecheck` is clean.
 - `npm run secretscan` and the pre-commit hook wiring referenced by `prepare` exist
   (`scripts/secret-scan.mjs`, `.githooks/pre-commit`).
 - Never commit real secrets. `.env.example` is the only env file in git, and nothing
@@ -361,8 +424,11 @@ from a real run; quoting a number before that would be invention.
   **not yet implemented**.
 - Model output can fail schema validation. Every model call is specified to
   Zod-validate, retry once, then fail readably.
-- The largest current risk is simply scope: as of this commit the slice is contracts
-  and scaffolding, and the evidence matrix below is entirely unchecked.
+- **The largest current risk is the missing API key.** The deterministic core runs
+  and is tested, but every adversarial stage — the part the product is actually
+  about — has never executed against a model. Until it does, the reviewers' real
+  behaviour on the smoke set is unknown, not merely unreported, and the evidence
+  matrix below stays entirely unchecked.
 
 ## 10. Privacy and licenses
 
@@ -386,8 +452,16 @@ from a real run; quoting a number before that would be invention.
 ## Evidence matrix
 
 Rule (doc §2): Devpost, video and README use present tense **only** for rows marked
-DONE. Everything else is presented as "next". **No box below is checked**, so nothing
-in this repository may currently be narrated in the present tense.
+DONE. Everything else is presented as "next". **No box below is checked**, so no
+*capability* in this table may be narrated in the present tense.
+
+A row here is a user-visible capability, and every one of them requires an artifact
+that does not exist: a deployed URL, a raw result file, a recorded diff. The four
+implemented modules do not tick any box on their own — an engine that runs in tests
+is not a demonstrated end-to-end capability, and this table deliberately refuses to
+credit it as one. Their status is stated in the [status note](#read-this-before-anything-else--repository-status)
+instead, where it is scoped to what the code does rather than to what the product
+delivers.
 
 A row without a working link is PLANNED. Some paths below are the intended location
 of evidence that does not exist yet; those are marked *(not yet present)*.
@@ -396,8 +470,8 @@ of evidence that does not exist yet; those are marked *(not yet present)*.
 |---|---|---|
 | End-to-end create→publish route | ☐ DONE ☐ PARTIAL ☐ PLANNED | Demo URL `<PLACEHOLDER>` + video timestamp `<PLACEHOLDER>` + `tests/e2e/createToPublish.test.ts` *(not yet present)* |
 | Three reviewers with schemas | ☐ DONE ☐ PARTIAL ☐ PLANNED | `src/reviewers/orchestrator.ts` → `runGauntlet` · `src/reviewers/schemas.ts` → `REVIEWER_SCHEMAS` · `src/reviewers/{ambiguity,discipline,distractors}.ts` |
-| v1→v2 history re-run | ☐ DONE ☐ PARTIAL ☐ PLANNED | `src/core/checks.ts` → `reRunHistory` + `tests/core/checks.test.ts` *(not yet present)* + real v1→v2 diff `<PLACEHOLDER>` |
-| Labeled smoke eval | ☐ DONE ☐ PARTIAL ☐ PLANNED | `npm run eval` (`src/eval/run.ts`) + raw JSON in `eval/results/` *(not yet present)* + fixtures `src/eval/smoke/` (8 of 16 authored) |
+| v1→v2 history re-run | ☐ DONE ☐ PARTIAL ☐ PLANNED | `src/core/checks.ts` → `reRunHistory` + `tests/checks.history.test.ts` (present, 55 tests passing) + real v1→v2 diff `<PLACEHOLDER>` |
+| Labeled smoke eval | ☐ DONE ☐ PARTIAL ☐ PLANNED | `npm run eval` (`src/eval/run.ts`) + raw JSON in `eval/results/` *(not yet present — no API key)* + fixtures `src/eval/smoke/` (16 of 16 authored) |
 | Stable isolated deploy | ☐ DONE ☐ PARTIAL ☐ PLANNED | Incognito-verified URL `<PLACEHOLDER>` |
 | Bounded discipline verifier | ☐ DONE ☐ PARTIAL ☐ PLANNED | `src/solver/probability.ts` → `solveProbability` + fixture `src/eval/smoke/holdout/factual-error-002.json` |
 | Defense rubric | ☐ DONE ☐ PARTIAL ☐ PLANNED | `src/reviewers/schemas.ts` → `DefenseRubricSchema` · `src/defense/viva.ts` → `scoreDefense` + a scored example `<PLACEHOLDER>` |
@@ -428,16 +502,17 @@ Separated with dated evidence, per doc §9.
 **Built July 13–21 (everything in this repository)**
 
 - The frozen specification: `docs/LA_FORJA_v6_final.md`.
-- The domain vocabulary and state machine contract: `src/core/types.ts`,
-  `src/core/stateMachine.ts`, `src/core/checks.ts`.
+- The domain vocabulary (`src/core/types.ts`) and the implemented lifecycle and
+  history re-run engine: `src/core/stateMachine.ts`, `src/core/checks.ts`.
 - The evidence contracts and reviewer prompts: `src/reviewers/`.
 - The GPT-5.6 compliance guard and env contract: `src/config/models.ts`,
   `.env.example`.
 - The persistence model and the seeded demo challenge: `prisma/schema.prisma`,
   `prisma/seed.ts`.
-- The bounded solver, item probe, defense and passport scaffolding: `src/solver/`,
-  `src/probe/`, `src/defense/`, `src/passport/`.
-- The labeled smoke set format, harness types and the 8 authored fixtures:
+- The implemented bounded solver and deterministic item probe (`src/solver/`,
+  `src/probe/`), and the defense and passport scaffolding whose model-backed bodies
+  are still next (`src/defense/`, `src/passport/`).
+- The labeled smoke set format, harness types and all 16 authored fixtures:
   `src/eval/`.
 - Project tooling and documentation: `package.json`, `tsconfig.json`,
   `vitest.config.ts`, `next.config.mjs`, this README and `RECORDING_GATE.md`.

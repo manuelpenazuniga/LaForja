@@ -111,7 +111,11 @@ export const DEFAULT_TIMEOUT_MS = 60_000;
  * one function whose only job is to turn this request into an HTTP call.
  */
 export interface ModelTransportRequest {
-  /** EXACT model ID to dispatch. Already passed `assertRuntimeCompliance`. */
+  /**
+   * EXACT model ID to dispatch. `callModel` has already passed it through
+   * `assertRuntimeCompliance` — and every transport re-checks it anyway, because
+   * a transport is exported and callable directly (see `ModelTransport`).
+   */
   model: string;
   /** Trusted system prompt (guardrails + task). */
   system: string;
@@ -162,6 +166,12 @@ export interface ModelTransportResponse {
    * dated snapshots). Omit it rather than defaulting to the requested ID —
    * `callModel` falls back, and "we asked for X" must stay distinguishable from
    * "the provider confirmed X".
+   *
+   * RE-GATED. `callModel` re-asserts compliance on this value and THROWS if it
+   * is not allowlisted, so an echoed ID outside ALLOWED_MODEL_IDS aborts the
+   * call rather than merely being flagged. That includes dated snapshots: the
+   * allowlist is a closed set on purpose, and an ID it does not name is not
+   * evidence, whatever it resolves to.
    */
   modelId?: string;
   tokensIn?: number;
@@ -173,11 +183,19 @@ export interface ModelTransportResponse {
  * The single async function that actually talks to the network. Everything else
  * in this module is pure or fake-driven.
  *
- * A transport MUST: send `delimitedItem` verbatim, expose no tools to the model,
+ * A transport MUST: call `assertRuntimeCompliance(req.model)` as its FIRST
+ * statement, send `delimitedItem` verbatim, expose no tools to the model,
  * honour `signal`, and reject (never resolve with junk) on transport failure.
  * A transport MUST NOT: retry internally (retry-exactly-once lives in
  * `callModel`, and a hidden inner retry would silently make it three or four
  * calls), parse or repair the response, or substitute a different model ID.
+ *
+ * WHY THE TRANSPORT RE-CHECKS COMPLIANCE. `callModel` gates the model ID before
+ * it builds a request, but transports are exported values: any caller can hold
+ * one and invoke it directly, and such a caller bypasses the allowlist entirely.
+ * Defence in depth — the guarantee "only gpt-5.6 reaches the wire" must not rest
+ * on every future call site remembering to route through `callModel`. The check
+ * is idempotent and free, so duplicating it costs nothing and closes the hole.
  */
 export type ModelTransport = (req: ModelTransportRequest) => Promise<ModelTransportResponse>;
 
@@ -186,7 +204,13 @@ export type ModelTransport = (req: ModelTransportRequest) => Promise<ModelTransp
  * in the system that needs a live API key, which is exactly why it is the only
  * code isolated behind a seam.
  *
- * TODO(codex): implement with the OpenAI SDK (`openai` is already a dependency).
+ * THE COMPLIANCE GUARD BELOW IS ALREADY IMPLEMENTED AND IS NOT CODEX'S TO
+ * REMOVE. It must stay the first statement of the function body, ahead of any
+ * SDK construction or network work: this transport is an exported value and a
+ * direct caller would otherwise never meet the allowlist at all.
+ *
+ * TODO(codex): implement with the OpenAI SDK (`openai` is already a dependency),
+ * BELOW the guard.
  *  - `client.responses.create({ model: req.model, ... })`.
  *  - INPUT: system message = `req.system` plus, when `req.repairNudge` is
  *    present (retry only), that nudge appended as a final system line. User
@@ -212,7 +236,10 @@ export type ModelTransport = (req: ModelTransportRequest) => Promise<ModelTransp
  *    and `callModel` reports them differently.
  * Reference: doc §7.1, hard constraints 1, 3, 4.
  */
-export const openaiTransport: ModelTransport = async (_req) => {
+export const openaiTransport: ModelTransport = async (req) => {
+  // Defence in depth: enforced HERE, not only in `callModel`, so a direct caller
+  // of the exported transport cannot bypass the allowlist. Must stay first.
+  assertRuntimeCompliance(req.model);
   throw new Error(
     'TODO(codex): implement the OpenAI Responses API transport (structured output, no tools, abort signal)',
   );
@@ -236,7 +263,13 @@ export interface ModelCallArgs<T> {
 export interface ModelCallResult<T> {
   data: T;
   raw: string;
+  /** The ID the provider ECHOED — what actually served the call, not what we asked for. */
   modelId: string;
+  /**
+   * Recomputed from `modelId`. Always `true` on a returned result, because a
+   * non-compliant echoed ID makes `callModel` throw; persisted so the evidence
+   * states the fact instead of leaving a reader to infer it.
+   */
   modelFamilyOk: boolean;
   latencyMs: number;
   tokensIn?: number;
@@ -277,20 +310,32 @@ export interface ModelCallResult<T> {
  *     contract object becomes a Check row and poisons the passport.
  *  6. A transport REJECTION (network error) surfaces as-is, wrapped with call
  *     context. Transport rejections are NOT retried by this layer.
- *  7. Telemetry on success: latencyMs measured across the attempt(s), tokens and
+ *  7. COMPLIANCE GATE AGAIN, ON THE ECHOED ID. Resolve
+ *     `modelId = response.modelId ?? args.model` (the echoed ID wins), then call
+ *     `assertRuntimeCompliance(modelId)` and let it THROW. Requesting a compliant
+ *     model is not the same as having been SERVED one: a proxy, an alias or a
+ *     provider fallback can echo back `gpt-4o` for a request that passed step 1,
+ *     and only the second check is evidence. Recording `modelFamilyOk: false` and
+ *     returning the result anyway is a FAIL-OPEN — the caller uses the object as
+ *     if it were valid and a non-gpt-5.6 finding lands on the passport. Do this
+ *     BEFORE constructing the result, so no non-compliant result object exists.
+ *  8. Telemetry on success: latencyMs measured across the attempt(s), tokens and
  *     cost from the response, promptVersion, `promptHash(args.system)`,
- *     schemaValid: true, modelId = `response.modelId ?? args.model` (the echoed
- *     ID wins), modelFamilyOk = `isCompliantModel(modelId)` — recompute from the
- *     ID that actually ran, not from the one requested.
+ *     schemaValid: true, modelId = the echoed ID resolved in step 7 (keep the
+ *     echoed value — it is the honest record of what actually served the call),
+ *     modelFamilyOk = `isCompliantModel(modelId)` — recomputed from the ID that
+ *     actually ran, not from the one requested. After step 7 this is necessarily
+ *     `true` on any returned result; it is kept because the persisted evidence
+ *     must state the fact rather than let a reader infer it.
  * Reference: doc §7.1, hard constraints 3 and 4.
  */
 export async function callModel<T>(
   args: ModelCallArgs<T>,
   transport: ModelTransport = openaiTransport,
 ): Promise<ModelCallResult<T>> {
-  void assertRuntimeCompliance; // step 1
-  void isCompliantModel; // step 7
-  void promptHash; // step 7
+  void assertRuntimeCompliance; // steps 1 and 7
+  void isCompliantModel; // step 8
+  void promptHash; // step 8
   void transport;
   throw new Error(
     'TODO(codex): implement bounded model call with Zod-validate + retry-once over ModelTransport',

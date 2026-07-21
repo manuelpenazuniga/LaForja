@@ -24,6 +24,7 @@ import {
   ITEM_OPEN,
   callModel,
   delimitItem,
+  openaiTransport,
   promptHash,
   type ModelCallArgs,
   type ModelTransport,
@@ -170,9 +171,13 @@ describe.skip('callModel — happy path', () => {
   });
 
   it('echoes the model ID the PROVIDER reported, not the one requested', async () => {
-    // Providers resolve aliases to dated snapshots. Telemetry must record what
-    // actually ran, otherwise the compliance evidence describes an intention.
-    const echoed = `${MODEL}-2026-05-01`;
+    // Providers resolve aliases. Telemetry must record what actually ran,
+    // otherwise the compliance evidence describes an intention.
+    //
+    // The echoed ID must itself be allowlisted — see the echoed-id gate below —
+    // so this uses a DIFFERENT allowlisted ID rather than a dated snapshot.
+    const echoed: string = ALLOWED_MODEL_IDS[1];
+    expect(echoed).not.toBe(MODEL as string);
     const transport: ModelTransport = async () => ({
       text: JSON.stringify(VALID_AMBIGUITY),
       modelId: echoed,
@@ -466,18 +471,82 @@ describe.skip('callModel — compliance gate runs BEFORE the transport (hard con
     }
   });
 
-  it('reports modelFamilyOk from the ID that actually ran', async () => {
-    // The gate accepted the REQUESTED id; if the provider then echoes something
-    // outside the allowlist, the run is not compliant evidence and must say so.
+  it('THROWS when the provider echoes a non-allowlisted model ID', async () => {
+    // REGRESSION (D1: the echoed model ID failed open). The pre-call gate proves
+    // we ASKED for a compliant model; only the echoed ID proves we were SERVED
+    // one. A proxy, an alias or a provider fallback can answer a gpt-5.6 request
+    // with gpt-4o. Recording `modelFamilyOk: false` and returning the result
+    // anyway is a fail-open: the caller consumes the object as if it were valid
+    // and a non-gpt-5.6 finding reaches the passport. The call must abort.
     const transport: ModelTransport = async () => ({
       text: JSON.stringify(VALID_AMBIGUITY),
       modelId: 'gpt-4o-mini',
     });
 
+    const error = await rejection(callModel<Ambiguity>(ambiguityArgs(), transport));
+
+    expect(error).toBeInstanceOf(Error);
+    // Names the ID that actually served the call, so the failure is diagnosable.
+    expect(error.message).toContain('gpt-4o-mini');
+    expect(error.message).toMatch(/gpt-5\.6/);
+  });
+
+  it('THROWS on an echoed ID that merely looks compliant', async () => {
+    // Same fail-open, dressed as a plausible dated snapshot or suffixed alias.
+    // The allowlist is a closed set: an ID it does not name is not evidence.
+    for (const echoed of ['gpt-5.6-terra-2026-05-01', 'gpt-5.60', 'gpt-5.6-luna']) {
+      const transport: ModelTransport = async () => ({
+        text: JSON.stringify(VALID_AMBIGUITY),
+        modelId: echoed,
+      });
+
+      await expect(callModel<Ambiguity>(ambiguityArgs(), transport)).rejects.toThrow();
+    }
+  });
+
+  it('reports modelFamilyOk from the ID that actually ran', async () => {
+    // Recomputed from the ECHOED id, never from the requested one. It is always
+    // true on a RETURNED result — a non-compliant echo throws above — but the
+    // persisted evidence must state the fact rather than imply it.
+    const transport: ModelTransport = async () => ({
+      text: JSON.stringify(VALID_AMBIGUITY),
+      modelId: ALLOWED_MODEL_IDS[1],
+    });
+
     const result = await callModel<Ambiguity>(ambiguityArgs(), transport);
 
-    expect(result.modelId).toBe('gpt-4o-mini');
-    expect(result.modelFamilyOk).toBe(false);
+    expect(result.modelId).toBe(ALLOWED_MODEL_IDS[1]);
+    expect(result.modelFamilyOk).toBe(true);
+  });
+});
+
+// NOT skipped: unlike `callModel`, the transport's compliance guard is already
+// implemented, so this regression genuinely runs today.
+describe('openaiTransport — enforces compliance itself (defence in depth)', () => {
+  it('refuses a non-allowlisted model when called DIRECTLY, bypassing callModel', async () => {
+    // REGRESSION (D2: the raw transport was exported without its own check).
+    // The transport is an exported value; any caller can hold it and invoke it
+    // without ever passing through callModel's gate. The guarantee "only gpt-5.6
+    // reaches the wire" must not depend on every future call site remembering.
+    const error = await rejection(
+      openaiTransport({
+        model: 'gpt-4o',
+        system: 'SYSTEM: irrelevant.',
+        delimitedItem: delimitItem(STEM),
+        schema: AmbiguitySchema,
+        schemaName: 'ambiguity-v1',
+        attempt: 0,
+        signal: new AbortController().signal,
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+        promptVersion: 'ambiguity-v1',
+        callSite: 'orchestrator',
+      }),
+    );
+
+    // The COMPLIANCE error, not the not-yet-implemented one: the guard must run
+    // before any transport work, so it cannot be reached only on the happy path.
+    expect(error.message).toContain('gpt-4o');
+    expect(error.message).not.toMatch(/TODO\(codex\)/);
   });
 });
 

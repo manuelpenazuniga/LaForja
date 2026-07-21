@@ -265,6 +265,76 @@ const AMBIGUITY_CHECK: RecordedCheck = {
   } satisfies AmbiguityContract,
 };
 
+/**
+ * RE-EXECUTABLE ambiguity constructions (regression fixtures for D1).
+ *
+ * The prose in `interpretation_a` / `interpretation_b` is what the reviewer
+ * WROTE; it is displayed, never executed. The re-executable form of a reading is
+ * a bounded-solver problem, and only a contract that carries both problems can
+ * be re-executed at all. These two fixtures pin the only two conclusive
+ * verdicts the executor may produce.
+ */
+interface ReExecutableAmbiguityContract extends AmbiguityContract {
+  problem_a: ProbabilityProblem;
+  problem_b: ProbabilityProblem;
+}
+
+/** Reading A resolves to 1/3, reading B to 1/2 ⇒ they still disagree. */
+const DIVERGING_READINGS: Pick<ReExecutableAmbiguityContract, 'problem_a' | 'problem_b'> = {
+  problem_a: {
+    kind: 'combinatoric',
+    params: {
+      experiment: 'urn_draws',
+      event: 'all_favorable',
+      favorable: 1,
+      unfavorable: 2,
+      draws: 1,
+      replacement: true,
+    },
+  },
+  problem_b: {
+    kind: 'basic',
+    params: { experiment: 'fair_coin_flips', event: 'exactly_k_heads', flips: 1, k: 1 },
+  },
+};
+
+/** Both readings resolve to 1/2 ⇒ they converge, the construction is dead. */
+const CONVERGING_READINGS: Pick<ReExecutableAmbiguityContract, 'problem_a' | 'problem_b'> = {
+  problem_a: {
+    kind: 'basic',
+    params: { experiment: 'fair_coin_flips', event: 'exactly_k_heads', flips: 1, k: 1 },
+  },
+  problem_b: {
+    kind: 'combinatoric',
+    params: {
+      experiment: 'urn_draws',
+      event: 'all_favorable',
+      favorable: 1,
+      unfavorable: 1,
+      draws: 1,
+      replacement: true,
+    },
+  },
+};
+
+const EXECUTABLE_AMBIGUITY_CHECK: RecordedCheck = {
+  ...AMBIGUITY_CHECK,
+  id: 'chk-ambiguity-executable-001',
+  contract: {
+    ...(AMBIGUITY_CHECK.contract as AmbiguityContract),
+    ...DIVERGING_READINGS,
+  } satisfies ReExecutableAmbiguityContract,
+};
+
+const CONVERGED_AMBIGUITY_CHECK: RecordedCheck = {
+  ...AMBIGUITY_CHECK,
+  id: 'chk-ambiguity-converged-001',
+  contract: {
+    ...(AMBIGUITY_CHECK.contract as AmbiguityContract),
+    ...CONVERGING_READINGS,
+  } satisfies ReExecutableAmbiguityContract,
+};
+
 const DEMO_LENGTH_CHECK: RecordedCheck = {
   id: 'chk-demo-length-001',
   reviewerType: 'item_probe',
@@ -316,6 +386,18 @@ const DEMO_HISTORY: RecordedCheck[] = [
   SEMANTIC_CHECK,
 ];
 
+/**
+ * The same history with a counterexample that CAN be re-executed. This is the
+ * shape a history has to have before a repair can ever clear it: a counterexample
+ * recorded as prose only is unverifiable and therefore permanently blocking.
+ */
+const DEMO_HISTORY_RE_EXECUTABLE: RecordedCheck[] = [
+  DEMO_LENGTH_CHECK,
+  DEMO_OVERLAP_CHECK,
+  CONVERGED_AMBIGUITY_CHECK,
+  SEMANTIC_CHECK,
+];
+
 // ---------------------------------------------------------------------------
 // The taxonomy is ENCODED, not described — this runs today (Claude-owned data).
 // ---------------------------------------------------------------------------
@@ -323,6 +405,8 @@ const ALL_FIXTURE_CHECKS: RecordedCheck[] = [
   SOLVER_CHECK,
   CUE_LENGTH_CHECK,
   AMBIGUITY_CHECK,
+  EXECUTABLE_AMBIGUITY_CHECK,
+  CONVERGED_AMBIGUITY_CHECK,
   DEMO_LENGTH_CHECK,
   DEMO_OVERLAP_CHECK,
   SEMANTIC_CHECK,
@@ -391,12 +475,12 @@ describe('reRunCheck — deterministic class: STRICT non-regression', () => {
   });
 
   it('blocks publish when a deterministic check regresses, and only then', () => {
-    const clean = reRunHistory([SOLVER_CHECK], DICE_V2_REPAIRED);
+    const clean = reRunHistory([SOLVER_CHECK], DICE_V2_REPAIRED, 1);
     expect(clean.outcomes).toHaveLength(1);
     expect(clean.outcomes[0]?.result).toBe('pass');
     expect(clean.blocksPublish).toBe(false);
 
-    const regressed = reRunHistory([SOLVER_CHECK], DICE_V2_REGRESSED);
+    const regressed = reRunHistory([SOLVER_CHECK], DICE_V2_REGRESSED, 1);
     expect(regressed.outcomes).toHaveLength(1);
     expect(regressed.outcomes[0]?.result).toBe('regressed');
     expect(regressed.blocksPublish).toBe(true);
@@ -405,8 +489,8 @@ describe('reRunCheck — deterministic class: STRICT non-regression', () => {
   it('re-runs the probe invariant too: the length cue cannot come back', () => {
     expect(reRunCheck(CUE_LENGTH_CHECK, CUE_V1).result).toBe('regressed');
     expect(reRunCheck(CUE_LENGTH_CHECK, CUE_V2_REPAIRED).result).toBe('pass');
-    expect(reRunHistory([CUE_LENGTH_CHECK], CUE_V1).blocksPublish).toBe(true);
-    expect(reRunHistory([CUE_LENGTH_CHECK], CUE_V2_REPAIRED).blocksPublish).toBe(false);
+    expect(reRunHistory([CUE_LENGTH_CHECK], CUE_V1, 1).blocksPublish).toBe(true);
+    expect(reRunHistory([CUE_LENGTH_CHECK], CUE_V2_REPAIRED, 1).blocksPublish).toBe(false);
   });
 
   it('also fails a repair that INTRODUCES a new deterministic failure', () => {
@@ -417,7 +501,7 @@ describe('reRunCheck — deterministic class: STRICT non-regression', () => {
 
     expect(outcome.checkClass).toBe('deterministic');
     expect(outcome.result).toBe('regressed');
-    expect(reRunHistory([DEMO_LENGTH_CHECK], DEMO_V2_NEW_CUE_LEAK).blocksPublish).toBe(true);
+    expect(reRunHistory([DEMO_LENGTH_CHECK], DEMO_V2_NEW_CUE_LEAK, 1).blocksPublish).toBe(true);
 
     // ...and it still holds on the clean repair.
     expect(reRunCheck(DEMO_LENGTH_CHECK, DEMO_V2_REPAIRED).result).toBe('pass');
@@ -428,39 +512,137 @@ describe('reRunCheck — deterministic class: STRICT non-regression', () => {
 // Counterexample class — the construction is RE-EXECUTED on v2.
 // ---------------------------------------------------------------------------
 describe('reRunCheck — counterexample class: the construction is re-executed', () => {
-  it('regresses while both readings still yield different answers (the demo item v1)', () => {
-    const outcome = reRunCheck(AMBIGUITY_CHECK, DEMO_V1);
+  it('regresses while both re-solved readings still yield different answers', () => {
+    // A real re-execution: reading A is re-solved to 1/3, reading B to 1/2. They
+    // still disagree, so the counterexample still holds and the version does not
+    // publish. Nothing here reads the stem.
+    const outcome = reRunCheck(EXECUTABLE_AMBIGUITY_CHECK, DEMO_V1);
 
-    expect(outcome.originalCheckId).toBe(AMBIGUITY_CHECK.id);
+    expect(outcome.originalCheckId).toBe(EXECUTABLE_AMBIGUITY_CHECK.id);
     expect(outcome.checkClass).toBe('counterexample');
     expect(outcome.result).toBe('regressed');
+    expect(outcome.blocksPublish).toBe(true);
   });
 
   it('regresses on a cosmetic v2 that leaves both readings available', () => {
     // Rewording without disambiguating is not a repair: 1/3 and 1/2 both still hold.
-    expect(reRunCheck(AMBIGUITY_CHECK, DEMO_V2_STILL_AMBIGUOUS).result).toBe('regressed');
-    expect(reRunHistory([AMBIGUITY_CHECK], DEMO_V2_STILL_AMBIGUOUS).blocksPublish).toBe(true);
+    expect(reRunCheck(EXECUTABLE_AMBIGUITY_CHECK, DEMO_V2_STILL_AMBIGUOUS).result).toBe(
+      'regressed',
+    );
+    expect(
+      reRunHistory([EXECUTABLE_AMBIGUITY_CHECK], DEMO_V2_STILL_AMBIGUOUS, 1).blocksPublish,
+    ).toBe(true);
   });
 
-  it('passes once the repair disambiguates the stem (only one reading survives)', () => {
-    const outcome = reRunCheck(AMBIGUITY_CHECK, DEMO_V2_REPAIRED);
+  it('passes only when the two re-solved readings CONVERGE on one answer', () => {
+    // The construction is "two readings, two different answers". It is dead when
+    // re-executing both readings produces the same answer — and that is the only
+    // way an ambiguity counterexample may ever return a pass.
+    const outcome = reRunCheck(CONVERGED_AMBIGUITY_CHECK, DEMO_V2_REPAIRED);
 
     expect(outcome.checkClass).toBe('counterexample');
     expect(outcome.result).toBe('pass');
-    expect(reRunHistory([AMBIGUITY_CHECK], DEMO_V2_REPAIRED).blocksPublish).toBe(false);
+    expect(outcome.blocksPublish).toBe(false);
+    expect(reRunHistory([CONVERGED_AMBIGUITY_CHECK], DEMO_V2_REPAIRED, 1).blocksPublish).toBe(
+      false,
+    );
   });
 
   it('is deterministic: re-executing the same construction twice gives the same verdict', () => {
-    expect(reRunCheck(AMBIGUITY_CHECK, DEMO_V2_REPAIRED)).toEqual(
-      reRunCheck(AMBIGUITY_CHECK, DEMO_V2_REPAIRED),
+    expect(reRunCheck(EXECUTABLE_AMBIGUITY_CHECK, DEMO_V2_REPAIRED)).toEqual(
+      reRunCheck(EXECUTABLE_AMBIGUITY_CHECK, DEMO_V2_REPAIRED),
     );
     expect(reRunCheck(AMBIGUITY_CHECK, DEMO_V1)).toEqual(reRunCheck(AMBIGUITY_CHECK, DEMO_V1));
   });
 
   it('never resolves to "readjudicated" — a counterexample is executed, not judged', () => {
     for (const version of [DEMO_V1, DEMO_V2_STILL_AMBIGUOUS, DEMO_V2_REPAIRED]) {
+      expect(reRunCheck(EXECUTABLE_AMBIGUITY_CHECK, version).result).not.toBe('readjudicated');
       expect(reRunCheck(AMBIGUITY_CHECK, version).result).not.toBe('readjudicated');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D1 REGRESSION — the counterexample replay is an EXECUTION, never a reading of
+// the stem.
+//
+// The bug this suite exists to prevent: runAmbiguityCheck decided whether the
+// construction still held by grepping the new stem for phrases like "at least
+// one" / "a specific child". That ignored the recorded readings and their
+// answers entirely, only ever "worked" for the two-children demo item, and —
+// far worse — FAILED OPEN: any unrelated stem that happened to contain those
+// words was declared disambiguated and returned a pass.
+// ---------------------------------------------------------------------------
+
+/** A completely unrelated item whose stem contains the words "at least one". */
+const UNRELATED_AT_LEAST_ONE: VersionUnderTest = {
+  versionNumber: 2,
+  stem: 'A diagram shows several shapes, and at least one of them is a circle. How many circles does the diagram contain?',
+  options: ['1', '2', '3', '4'],
+  correctKey: 'B',
+  authorRationale: 'The diagram is inspected directly; two of the shapes are circles.',
+};
+
+/** The same item worded without the trigger phrase. */
+const UNRELATED_WITHOUT_PHRASE: VersionUnderTest = {
+  ...UNRELATED_AT_LEAST_ONE,
+  stem: 'A diagram shows several shapes, one of which is a circle. How many circles does the diagram contain?',
+};
+
+describe('D1 regression — no natural-language pattern decides a counterexample', () => {
+  it('does NOT pass an unrelated stem that merely contains the words "at least one"', () => {
+    // The old heuristic returned 'pass' here: the phrase was present, so the
+    // stem was declared disambiguated. That is a fail-open on an item the
+    // recorded construction has nothing to do with.
+    const outcome = reRunCheck(AMBIGUITY_CHECK, UNRELATED_AT_LEAST_ONE);
+
+    expect(outcome.checkClass).toBe('counterexample');
+    expect(outcome.result).not.toBe('pass');
+    expect(outcome.blocksPublish).toBe(true);
+  });
+
+  it('reports a prose-only construction as INCONCLUSIVE, which blocks publish', () => {
+    // Two readings recorded as prose cannot be re-solved. §5 promises the
+    // EXECUTION and the BLOCKING, not a verdict the engine cannot compute, so
+    // "we could not re-execute it" must never be dressed up as "it passed".
+    const outcome = reRunCheck(AMBIGUITY_CHECK, DEMO_V2_REPAIRED);
+
+    expect(outcome.result).toBe('inconclusive');
+    expect(outcome.blocksPublish).toBe(true);
+    expect(reRunHistory([AMBIGUITY_CHECK], DEMO_V2_REPAIRED, 1).blocksPublish).toBe(true);
+  });
+
+  it('gives the SAME verdict whether or not the stem contains the trigger phrases', () => {
+    // The verdict is a function of the recorded construction and the solver, not
+    // of the words in the stem. Rewriting the stem cannot move it.
+    const withPhrase = reRunCheck(EXECUTABLE_AMBIGUITY_CHECK, UNRELATED_AT_LEAST_ONE);
+    const withoutPhrase = reRunCheck(EXECUTABLE_AMBIGUITY_CHECK, UNRELATED_WITHOUT_PHRASE);
+    expect(withPhrase.result).toBe(withoutPhrase.result);
+
+    const demoWithPhrase = reRunCheck(EXECUTABLE_AMBIGUITY_CHECK, DEMO_V2_REPAIRED);
+    const demoWithout = reRunCheck(EXECUTABLE_AMBIGUITY_CHECK, DEMO_V2_STILL_AMBIGUOUS);
+    expect(demoWithPhrase.result).toBe(demoWithout.result);
+    expect(demoWithPhrase.result).toBe('regressed');
+  });
+
+  it('is INCONCLUSIVE when a recorded reading is outside the bounded solver', () => {
+    const outOfBounds: RecordedCheck = {
+      ...EXECUTABLE_AMBIGUITY_CHECK,
+      id: 'chk-ambiguity-out-of-bounds-001',
+      contract: {
+        ...(AMBIGUITY_CHECK.contract as AmbiguityContract),
+        problem_a: DIVERGING_READINGS.problem_a,
+        problem_b: {
+          kind: 'basic',
+          params: { experiment: 'unsupported_experiment', event: 'whatever' },
+        },
+      } satisfies ReExecutableAmbiguityContract,
+    };
+
+    const outcome = reRunCheck(outOfBounds, DEMO_V2_REPAIRED);
+    expect(outcome.result).toBe('inconclusive');
+    expect(outcome.blocksPublish).toBe(true);
   });
 });
 
@@ -513,10 +695,65 @@ describe('reRunCheck — semantic class: re-adjudicated, never a hard guarantee'
   });
 
   it('does not block publish on its own', () => {
-    const summary = reRunHistory([SEMANTIC_CHECK], DEMO_V2_REPAIRED);
+    const summary = reRunHistory([SEMANTIC_CHECK], DEMO_V2_REPAIRED, 1);
     expect(summary.outcomes).toHaveLength(1);
     expect(summary.outcomes[0]?.result).toBe('readjudicated');
     expect(summary.blocksPublish).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D3 REGRESSION — a re-adjudication that did not happen is not reported as one.
+//
+// The bug this suite exists to prevent: when no adjudicator recognised the
+// recorded contract, the engine still emitted a 'readjudicated' outcome with a
+// fabricated 'modified' verdict whose rationale read "was re-adjudicated
+// against the target version". The passport then displayed a clean
+// re-adjudication that nobody performed. Semantic checks must still NOT block
+// (doc §5) — the failure has to be VISIBLE, not fatal.
+// ---------------------------------------------------------------------------
+
+/** A semantic check no adjudicator in this build knows how to evaluate. */
+const UNADJUDICABLE_SEMANTIC_CHECK: RecordedCheck = {
+  id: 'chk-citation-unadjudicable-001',
+  reviewerType: 'discipline',
+  verificationKind: 'citation',
+  checkClass: 'semantic',
+  contract: {
+    claim: 'The conditional space is stated correctly.',
+    verdict: 'unverified',
+    citation: null,
+  },
+};
+
+describe('D3 regression — an unresolved re-adjudication is surfaced, not faked', () => {
+  it('returns "inconclusive" instead of a verdict nobody produced', () => {
+    const outcome = reRunCheck(UNADJUDICABLE_SEMANTIC_CHECK, DEMO_V2_REPAIRED);
+
+    expect(outcome.checkClass).toBe('semantic');
+    expect(outcome.result).toBe('inconclusive');
+    expect(outcome.result).not.toBe('readjudicated');
+    expect('verdict' in outcome).toBe(false);
+  });
+
+  it('still does NOT block publish — semantic judgments never hard-block (doc §5)', () => {
+    const outcome = reRunCheck(UNADJUDICABLE_SEMANTIC_CHECK, DEMO_V2_REPAIRED);
+    expect(outcome.blocksPublish).toBe(false);
+
+    const batch = reRunHistory([UNADJUDICABLE_SEMANTIC_CHECK], DEMO_V2_REPAIRED, 1);
+    expect(batch.status).toBe('complete');
+    expect(batch.blocksPublish).toBe(false);
+  });
+
+  it('carries a detail the passport can render as "could not be re-adjudicated"', () => {
+    const outcome = reRunCheck(UNADJUDICABLE_SEMANTIC_CHECK, DEMO_V2_REPAIRED);
+    expect(outcome.detail ?? '').not.toBe('');
+  });
+
+  it('a recognised contract still produces a real structured verdict', () => {
+    // The distinction only means something if the success path still works.
+    const outcome = asReadjudicated(reRunCheck(SEMANTIC_CHECK, DEMO_V2_REPAIRED));
+    expect(['upheld', 'withdrawn', 'modified']).toContain(outcome.verdict.status);
   });
 });
 
@@ -525,14 +762,14 @@ describe('reRunCheck — semantic class: re-adjudicated, never a hard guarantee'
 // ---------------------------------------------------------------------------
 describe('reRunHistory — the full history is executed on every version', () => {
   it('produces exactly one outcome per recorded check, in order', () => {
-    const summary = reRunHistory(DEMO_HISTORY, DEMO_V2_REPAIRED);
+    const summary = reRunHistory(DEMO_HISTORY, DEMO_V2_REPAIRED, DEMO_HISTORY.length);
 
     expect(summary.outcomes).toHaveLength(DEMO_HISTORY.length);
     expect(summary.outcomes.map((o) => o.originalCheckId)).toEqual(DEMO_HISTORY.map((c) => c.id));
   });
 
   it('drops nothing: every outcome carries its class and a legal result', () => {
-    const summary = reRunHistory(DEMO_HISTORY, DEMO_V2_STILL_AMBIGUOUS);
+    const summary = reRunHistory(DEMO_HISTORY, DEMO_V2_STILL_AMBIGUOUS, DEMO_HISTORY.length);
 
     expect(summary.outcomes.map((o) => o.checkClass)).toEqual(
       DEMO_HISTORY.map((c) => c.checkClass),
@@ -543,27 +780,49 @@ describe('reRunHistory — the full history is executed on every version', () =>
   });
 
   it('clears the whole history on the real repair: nothing regressed, publish is not blocked', () => {
-    const summary = reRunHistory(DEMO_HISTORY, DEMO_V2_REPAIRED);
+    // Every class clears: both deterministic invariants hold, the counterexample
+    // is RE-EXECUTED and its two readings converge, the semantic judgment is
+    // re-adjudicated. This is the only shape in which a repair may publish.
+    const summary = reRunHistory(
+      DEMO_HISTORY_RE_EXECUTABLE,
+      DEMO_V2_REPAIRED,
+      DEMO_HISTORY_RE_EXECUTABLE.length,
+    );
 
     const byId = new Map(summary.outcomes.map((o) => [o.originalCheckId, o.result] as const));
     expect(byId.get(DEMO_LENGTH_CHECK.id)).toBe('pass');
     expect(byId.get(DEMO_OVERLAP_CHECK.id)).toBe('pass');
-    expect(byId.get(AMBIGUITY_CHECK.id)).toBe('pass');
+    expect(byId.get(CONVERGED_AMBIGUITY_CHECK.id)).toBe('pass');
     expect(byId.get(SEMANTIC_CHECK.id)).toBe('readjudicated');
     expect(summary.blocksPublish).toBe(false);
   });
 
+  it('does NOT clear a history whose counterexample cannot be re-executed', () => {
+    // Same repair, same item, but the recorded counterexample is prose only. The
+    // deterministic invariants pass and nothing regressed — and the batch still
+    // blocks, because an unverifiable counterexample is not a cleared one.
+    const summary = reRunHistory(DEMO_HISTORY, DEMO_V2_REPAIRED, DEMO_HISTORY.length);
+
+    const byId = new Map(summary.outcomes.map((o) => [o.originalCheckId, o.result] as const));
+    expect(byId.get(DEMO_LENGTH_CHECK.id)).toBe('pass');
+    expect(byId.get(DEMO_OVERLAP_CHECK.id)).toBe('pass');
+    expect(byId.get(AMBIGUITY_CHECK.id)).toBe('inconclusive');
+    expect(summary.status).toBe('complete'); // it RAN — it just could not conclude
+    expect(summary.blocksPublish).toBe(true);
+  });
+
   it('blocks publish when ANY deterministic or counterexample check regressed', () => {
     // The ambiguity counterexample still holds on the cosmetic v2.
-    const summary = reRunHistory(DEMO_HISTORY, DEMO_V2_STILL_AMBIGUOUS);
+    const history = [DEMO_LENGTH_CHECK, DEMO_OVERLAP_CHECK, EXECUTABLE_AMBIGUITY_CHECK];
+    const summary = reRunHistory(history, DEMO_V2_STILL_AMBIGUOUS, history.length);
     const regressed = summary.outcomes.filter((o) => o.result === 'regressed');
 
-    expect(regressed.map((o) => o.originalCheckId)).toContain(AMBIGUITY_CHECK.id);
+    expect(regressed.map((o) => o.originalCheckId)).toContain(EXECUTABLE_AMBIGUITY_CHECK.id);
     expect(summary.blocksPublish).toBe(true);
   });
 
   it('blocks publish when the repair introduces a new deterministic failure', () => {
-    const summary = reRunHistory(DEMO_HISTORY, DEMO_V2_NEW_CUE_LEAK);
+    const summary = reRunHistory(DEMO_HISTORY, DEMO_V2_NEW_CUE_LEAK, DEMO_HISTORY.length);
     const byId = new Map(summary.outcomes.map((o) => [o.originalCheckId, o.result] as const));
 
     expect(summary.outcomes).toHaveLength(DEMO_HISTORY.length);
@@ -571,23 +830,27 @@ describe('reRunHistory — the full history is executed on every version', () =>
     expect(summary.blocksPublish).toBe(true);
   });
 
-  it('handles an empty history without blocking publish', () => {
-    const summary = reRunHistory([], DEMO_V2_REPAIRED);
+  it('handles an EXPLICITLY declared empty history without blocking publish', () => {
+    const summary = reRunHistory([], DEMO_V2_REPAIRED, 0);
     expect(summary.outcomes).toEqual([]);
     expect(summary.blocksPublish).toBe(false);
   });
 
   it('is deterministic across repeated runs of the same history', () => {
-    expect(reRunHistory(DEMO_HISTORY, DEMO_V2_REPAIRED)).toEqual(
-      reRunHistory(DEMO_HISTORY, DEMO_V2_REPAIRED),
+    expect(reRunHistory(DEMO_HISTORY, DEMO_V2_REPAIRED, DEMO_HISTORY.length)).toEqual(
+      reRunHistory(DEMO_HISTORY, DEMO_V2_REPAIRED, DEMO_HISTORY.length),
     );
   });
 
   it('reports a COMPLETE batch when every expected check produced an outcome', () => {
-    const batch: HistoryRunBatch = reRunHistory(DEMO_HISTORY, DEMO_V2_REPAIRED);
+    const batch: HistoryRunBatch = reRunHistory(
+      DEMO_HISTORY_RE_EXECUTABLE,
+      DEMO_V2_REPAIRED,
+      DEMO_HISTORY_RE_EXECUTABLE.length,
+    );
 
-    expect(batch.expectedCheckCount).toBe(DEMO_HISTORY.length);
-    expect(batch.completedCheckCount).toBe(DEMO_HISTORY.length);
+    expect(batch.expectedCheckCount).toBe(DEMO_HISTORY_RE_EXECUTABLE.length);
+    expect(batch.completedCheckCount).toBe(DEMO_HISTORY_RE_EXECUTABLE.length);
     expect(batch.status).toBe('complete');
     expect(batch.completedAt).not.toBeNull();
     expect(batch.blocksPublish).toBe(false);
@@ -600,11 +863,80 @@ describe('reRunHistory — the full history is executed on every version', () =>
       authorRationale: `${DEMO_V2_REPAIRED.authorRationale} Se aclara además que los nacimientos son independientes.`,
     };
 
-    const summary = reRunHistory(DEMO_HISTORY, v3);
+    const summary = reRunHistory(
+      DEMO_HISTORY_RE_EXECUTABLE,
+      v3,
+      DEMO_HISTORY_RE_EXECUTABLE.length,
+    );
 
-    expect(summary.outcomes).toHaveLength(DEMO_HISTORY.length);
-    expect(summary.outcomes.map((o) => o.originalCheckId)).toEqual(DEMO_HISTORY.map((c) => c.id));
+    expect(summary.outcomes).toHaveLength(DEMO_HISTORY_RE_EXECUTABLE.length);
+    expect(summary.outcomes.map((o) => o.originalCheckId)).toEqual(
+      DEMO_HISTORY_RE_EXECUTABLE.map((c) => c.id),
+    );
     expect(summary.blocksPublish).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D2 REGRESSION — an empty or truncated history must not read as "clean".
+//
+// The bug this suite exists to prevent: expectedCheckCount was derived from
+// `_history.length` — the SAME array the loop iterates. The count was therefore
+// a tautology, and a truncated or failed load of the recorded checks arrived as
+// an empty array that reported status 'complete', blocksPublish false, and
+// authorised HISTORY_CLEAN on a history that was never read.
+//
+// An item only reaches REGRESSION through SUBMIT_REPAIR or DISPUTE_REPAIR, so it
+// MUST have had prior checks: an empty history there is evidence of a bug, not
+// of cleanliness. The expected count therefore comes from OUTSIDE the array.
+// ---------------------------------------------------------------------------
+describe('D2 regression — the expected check count comes from outside the array', () => {
+  it('BLOCKS when the recorded history arrives empty but checks were expected', () => {
+    // This is what a failed database load looks like. Under the old rule it was
+    // indistinguishable from a genuinely empty history and published.
+    const batch = reRunHistory([], DEMO_V2_REPAIRED, DEMO_HISTORY.length);
+
+    expect(batch.expectedCheckCount).toBe(DEMO_HISTORY.length);
+    expect(batch.completedCheckCount).toBe(0);
+    expect(batch.status).toBe('incomplete');
+    expect(batch.blocksPublish).toBe(true);
+    expect(canDispatchHistoryClean(batch)).toBe(false);
+  });
+
+  it('BLOCKS when the history is TRUNCATED relative to the declared count', () => {
+    const truncated = DEMO_HISTORY.slice(0, 2);
+    const batch = reRunHistory(truncated, DEMO_V2_REPAIRED, DEMO_HISTORY.length);
+
+    // Nothing regressed among the two checks that did run...
+    expect(batch.outcomes.every((o) => o.result !== 'regressed')).toBe(true);
+    // ...and the batch still refuses to authorise HISTORY_CLEAN.
+    expect(batch.status).toBe('incomplete');
+    expect(batch.blocksPublish).toBe(true);
+  });
+
+  it('BLOCKS when the history holds MORE checks than the caller counted', () => {
+    // The two numbers disagreeing in either direction is evidence of a load bug.
+    const batch = reRunHistory(DEMO_HISTORY, DEMO_V2_REPAIRED, DEMO_HISTORY.length - 1);
+
+    expect(batch.status).toBe('incomplete');
+    expect(batch.blocksPublish).toBe(true);
+  });
+
+  it('BLOCKS on an unusable declared count rather than falling back to the array', () => {
+    for (const bogus of [-1, 1.5, Number.NaN]) {
+      const batch = reRunHistory(DEMO_HISTORY, DEMO_V2_REPAIRED, bogus);
+      expect(batch.status).toBe('incomplete');
+      expect(batch.blocksPublish).toBe(true);
+    }
+  });
+
+  it('accepts an empty history ONLY when the caller declares zero explicitly', () => {
+    const declaredEmpty = reRunHistory([], DEMO_V2_REPAIRED, 0);
+
+    expect(declaredEmpty.expectedCheckCount).toBe(0);
+    expect(declaredEmpty.status).toBe('complete');
+    expect(declaredEmpty.blocksPublish).toBe(false);
+    expect(canDispatchHistoryClean(declaredEmpty)).toBe(true);
   });
 });
 
@@ -646,7 +978,7 @@ describe('fail-closed — inconclusive deterministic/counterexample re-runs bloc
     const outcome = reRunCheck(UNRUNNABLE_SOLVER_CHECK, DICE_V2_REPAIRED);
     expect(outcome.blocksPublish).toBe(true);
 
-    const batch = reRunHistory([UNRUNNABLE_SOLVER_CHECK], DICE_V2_REPAIRED);
+    const batch = reRunHistory([UNRUNNABLE_SOLVER_CHECK], DICE_V2_REPAIRED, 1);
     expect(batch.blocksPublish).toBe(true);
   });
 
@@ -655,15 +987,16 @@ describe('fail-closed — inconclusive deterministic/counterexample re-runs bloc
 
     expect(outcome.result).toBe('inconclusive');
     expect(outcome.blocksPublish).toBe(true);
-    expect(reRunHistory([UNKNOWN_INVARIANT_CHECK], DEMO_V2_REPAIRED).blocksPublish).toBe(true);
+    expect(reRunHistory([UNKNOWN_INVARIANT_CHECK], DEMO_V2_REPAIRED, 1).blocksPublish).toBe(true);
   });
 
   it('BLOCKS publish on an inconclusive counterexample re-execution', () => {
-    // Re-applying two natural-language readings to a repaired stem can fail to
-    // resolve. §5 guarantees the EXECUTION and the BLOCKING, not a deterministic
-    // adjudication — so an unresolved re-execution keeps the version unpublished.
+    // The recorded construction cannot be re-executed when its executor build is
+    // gone. §5 guarantees the EXECUTION and the BLOCKING, not a verdict the
+    // engine cannot compute — so an unresolved re-execution keeps the version
+    // unpublished.
     const unrunnable: RecordedCheck = {
-      ...AMBIGUITY_CHECK,
+      ...EXECUTABLE_AMBIGUITY_CHECK,
       id: 'chk-ambiguity-unrunnable-001',
       executorVersion: 'solver@0.0.0-removed',
     };
@@ -675,7 +1008,14 @@ describe('fail-closed — inconclusive deterministic/counterexample re-runs bloc
   });
 
   it('is the general rule: executable outcomes pass ONLY on a conclusive "pass"', () => {
-    const executable = [SOLVER_CHECK, CUE_LENGTH_CHECK, AMBIGUITY_CHECK, UNRUNNABLE_SOLVER_CHECK];
+    const executable = [
+      SOLVER_CHECK,
+      CUE_LENGTH_CHECK,
+      AMBIGUITY_CHECK,
+      EXECUTABLE_AMBIGUITY_CHECK,
+      CONVERGED_AMBIGUITY_CHECK,
+      UNRUNNABLE_SOLVER_CHECK,
+    ];
     const versions = [DICE_V1, DICE_V2_REPAIRED, DEMO_V1, DEMO_V2_REPAIRED];
 
     for (const check of executable) {
@@ -708,8 +1048,8 @@ describe('fail-closed — inconclusive deterministic/counterexample re-runs bloc
 // regression. The batch record is what answers doc §5 and gate question 3.
 // ---------------------------------------------------------------------------
 describe('HistoryRunBatch — completeness gates HISTORY_CLEAN', () => {
-  it('an empty history is COMPLETE and does not block', () => {
-    const batch = reRunHistory([], DEMO_V2_REPAIRED);
+  it('an explicitly declared empty history is COMPLETE and does not block', () => {
+    const batch = reRunHistory([], DEMO_V2_REPAIRED, 0);
 
     expect(batch.expectedCheckCount).toBe(0);
     expect(batch.completedCheckCount).toBe(0);
@@ -718,7 +1058,7 @@ describe('HistoryRunBatch — completeness gates HISTORY_CLEAN', () => {
   });
 
   it('records the target version and a closed time window', () => {
-    const batch = reRunHistory(DEMO_HISTORY, DEMO_V2_REPAIRED);
+    const batch = reRunHistory(DEMO_HISTORY, DEMO_V2_REPAIRED, DEMO_HISTORY.length);
 
     expect(batch.targetVersionId.length).toBeGreaterThan(0);
     expect(Number.isNaN(Date.parse(batch.startedAt))).toBe(false);
@@ -761,7 +1101,11 @@ describe('HistoryRunBatch — completeness gates HISTORY_CLEAN', () => {
   });
 
   it('allows HISTORY_CLEAN only on a complete, fully accounted, non-blocking batch', () => {
-    const batch = reRunHistory(DEMO_HISTORY, DEMO_V2_REPAIRED);
+    const batch = reRunHistory(
+      DEMO_HISTORY_RE_EXECUTABLE,
+      DEMO_V2_REPAIRED,
+      DEMO_HISTORY_RE_EXECUTABLE.length,
+    );
 
     expect(batch.status).toBe('complete');
     expect(batch.outcomes).toHaveLength(batch.expectedCheckCount);
@@ -771,7 +1115,10 @@ describe('HistoryRunBatch — completeness gates HISTORY_CLEAN', () => {
   });
 
   it('marks the batch as blocking when the repair is cosmetic', () => {
-    const batch = reRunHistory(DEMO_HISTORY, DEMO_V2_STILL_AMBIGUOUS);
+    // The counterexample here is re-executable and its two readings still
+    // disagree, so the batch RAN to completion and still refuses to publish.
+    const history = [DEMO_LENGTH_CHECK, DEMO_OVERLAP_CHECK, EXECUTABLE_AMBIGUITY_CHECK];
+    const batch = reRunHistory(history, DEMO_V2_STILL_AMBIGUOUS, history.length);
 
     expect(batch.status).toBe('complete'); // it RAN — it just did not pass
     expect(batch.blocksPublish).toBe(true);
