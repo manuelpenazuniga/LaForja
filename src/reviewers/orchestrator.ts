@@ -221,52 +221,206 @@ export const MULTI_AGENT_VARIANT_ENV = 'MULTI_AGENT_VARIANT';
 export const DEFAULT_MULTI_AGENT_VARIANT = false;
 
 /**
- * TODO(codex): implement the gauntlet orchestration.
- *  - Call `toDelimitedItem(item)` ONCE and pass that exact string to every
- *    reviewer. The reviewers take ALREADY-DELIMITED text and must not re-wrap it.
- *  - Call every reviewer through `deps`, never through the module imports
- *    directly: the bundle IS the network seam, and a direct import bypasses it.
- *  - config 'gauntlet': run deps.reviewAmbiguity/reviewDiscipline/reviewDistractors
- *    concurrently with Promise.allSettled and a per-reviewer timeout
- *    (deps.timeoutMs ?? REVIEWER_TIMEOUT_MS). allSettled is load-bearing:
- *    Promise.all would let one rejected reviewer abort the pass, which hard
- *    constraint 3 forbids. The timeout must reject the individual reviewer,
- *    never the whole batch, and must ABORT that reviewer's signal — the run
- *    stops waiting AND the request stops running.
- *  - Concurrency is a requirement, not an optimization: start all three before
- *    awaiting any of them. Sequential awaits would make the pass cost the SUM of
- *    the reviewer latencies and would let a slow first reviewer starve the rest.
- *  - reviewDistractors resolves to a DistractorMap (an ARRAY). Fan it out: each
- *    entry becomes its own Check row (checkClass='semantic'), so one distractor
- *    outcome can yield N checks. The other two reviewers yield exactly one each.
- *  - Also run the deterministic item_probe (deps.runItemProbe) and record it as
- *    an outcome with reviewerType 'item_probe'. It needs no model call, so it
- *    MUST still produce a result when every model reviewer failed.
- *  - config 'general-reviewer': a SINGLE general reviewer call (eval baseline,
- *    doc §8) — deps.reviewGeneral only; the three specialists are not called.
- *    Its outcome is recorded with reviewerType GENERAL_REVIEWER; it is a
- *    baseline measurement, never a Check row.
- *  - config 'gauntlet-no-adjudication': same as gauntlet but skip adjudication
- *    downstream (the caller decides). Identical at THIS layer.
- *  - Use CONFIG_REVIEWERS[config] as the expected set and copy it to
- *    `expectedReviewers`; set `complete` true only when every expected reviewer
- *    AND the probe produced a result. Zero findings from a complete run is a
- *    clean item; zero findings from an incomplete run is nothing at all.
- *  - Never throw on a single reviewer failure — nothing throws out of this
- *    function for a reviewer reason. Capture it as ReviewerOutcome{ok:false}
- *    with `error` (the failure text) and `failureKind`.
- *  - Persist a ModelCall per call and a GauntletRun for the pass.
- *  - `multiAgentVariant`: DEFAULT_MULTI_AGENT_VARIANT unless BOTH
- *    deps.allowEvalVariants is true AND the MULTI_AGENT_VARIANT_ENV flag is set
- *    (doc §7.4). The env flag alone must NEVER be enough — it must never become
- *    the product default.
- * Reference: doc §7.1, §7.4, §8; hard constraint 3.
+ * Run the configured reviewer set against one canonical, singly-delimited item.
+ *
+ * Every model reviewer starts before the batch is awaited, has its own aborting
+ * deadline, and becomes a success or failure outcome through `allSettled`. The
+ * deterministic probe is recorded independently, so even total model failure
+ * remains distinguishable from a complete run with no accepted findings.
+ *
+ * `gauntlet` and `gauntlet-no-adjudication` share the three specialists here;
+ * adjudication is a downstream choice. `general-reviewer` runs only the single
+ * eval baseline reviewer. The multi-agent comparison is reported only when its
+ * explicit eval opt-in and environment switch are both enabled.
+ *
+ * Reference: doc §7.1, §7.4, §8; hard constraints 1 and 3.
  */
 export async function runGauntlet(
-  _item: RawItem,
-  _model: string,
-  _config: OrchestrationResult['config'] = 'gauntlet',
-  _deps: GauntletDeps = DEFAULT_GAUNTLET_DEPS,
+  item: RawItem,
+  model: string,
+  config: OrchestrationResult['config'] = 'gauntlet',
+  deps: GauntletDeps = DEFAULT_GAUNTLET_DEPS,
 ): Promise<OrchestrationResult> {
-  throw new Error('TODO(codex): implement concurrent orchestration with per-reviewer timeout');
+  const expectedReviewers = [...CONFIG_REVIEWERS[config]];
+  const delimitedItem = toDelimitedItem(item);
+  const timeoutMs = deps.timeoutMs ?? REVIEWER_TIMEOUT_MS;
+
+  const reviewerSpecs: ReviewerSpec[] =
+    config === 'general-reviewer'
+      ? [{ reviewerType: GENERAL_REVIEWER, fn: deps.reviewGeneral }]
+      : [
+          { reviewerType: 'ambiguity', fn: deps.reviewAmbiguity },
+          { reviewerType: 'discipline', fn: deps.reviewDiscipline },
+          { reviewerType: 'distractor', fn: deps.reviewDistractors },
+        ];
+
+  const probeStartedAt = Date.now();
+  let probeOutcome: ReviewerOutcome;
+  try {
+    const contract = deps.runItemProbe({
+      stem: item.stem,
+      options: item.options,
+      correctKey: item.correctKey,
+    });
+    probeOutcome = {
+      reviewerType: 'item_probe',
+      ok: true,
+      contract,
+      latencyMs: Date.now() - probeStartedAt,
+      schemaValid: true,
+    };
+  } catch (error: unknown) {
+    probeOutcome = {
+      reviewerType: 'item_probe',
+      ok: false,
+      error: readableError(error),
+      failureKind: 'error',
+      latencyMs: Date.now() - probeStartedAt,
+      schemaValid: false,
+    };
+  }
+
+  const invocations = reviewerSpecs.map((spec) =>
+    startReviewer(spec, delimitedItem, model, timeoutMs),
+  );
+  const settled = await Promise.allSettled(invocations.map((invocation) => invocation.promise));
+
+  const reviewerOutcomes = reviewerSpecs.map((spec, index): ReviewerOutcome => {
+    const invocation = invocations[index];
+    const result = settled[index];
+    const latencyMs = invocation === undefined ? 0 : Date.now() - invocation.startedAt;
+
+    if (result?.status === 'fulfilled') {
+      return {
+        reviewerType: spec.reviewerType,
+        ok: true,
+        contract: result.value,
+        latencyMs,
+        schemaValid: true,
+      };
+    }
+
+    const reason = result?.status === 'rejected'
+      ? result.reason
+      : new Error(`Reviewer ${spec.reviewerType} produced no settled result`);
+    return {
+      reviewerType: spec.reviewerType,
+      ok: false,
+      error: readableError(reason),
+      failureKind: failureKind(reason),
+      latencyMs,
+      schemaValid: false,
+    };
+  });
+
+  const outcomes = [...reviewerOutcomes, probeOutcome];
+  const succeededReviewers = new Set(
+    reviewerOutcomes
+      .filter((outcome) => outcome.ok && outcome.schemaValid)
+      .map((outcome) => outcome.reviewerType),
+  );
+
+  return {
+    config,
+    outcomes,
+    anySucceeded: succeededReviewers.size > 0,
+    complete:
+      probeOutcome.ok &&
+      probeOutcome.schemaValid &&
+      expectedReviewers.every((reviewer) => succeededReviewers.has(reviewer)),
+    expectedReviewers,
+    multiAgentVariant:
+      deps.allowEvalVariants === true &&
+      process.env[MULTI_AGENT_VARIANT_ENV] === 'true',
+  };
+}
+
+interface ReviewerSpec {
+  reviewerType: OrchestratedReviewer;
+  fn: ReviewerFn<unknown>;
+}
+
+interface ReviewerInvocation {
+  startedAt: number;
+  promise: Promise<unknown>;
+}
+
+class ReviewerTimeoutError extends Error {
+  constructor(reviewerType: OrchestratedReviewer, timeoutMs: number) {
+    super(`Reviewer ${reviewerType} timed out after ${timeoutMs}ms`);
+    this.name = 'ReviewerTimeoutError';
+  }
+}
+
+/** Start one reviewer immediately and bind only that call to its deadline. */
+function startReviewer(
+  spec: ReviewerSpec,
+  delimitedItem: string,
+  model: string,
+  timeoutMs: number,
+): ReviewerInvocation {
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(() => {
+      const error = new ReviewerTimeoutError(spec.reviewerType, timeoutMs);
+      reject(error);
+      controller.abort(error);
+    }, timeoutMs);
+  });
+
+  const review = Promise.resolve().then(() =>
+    spec.fn(delimitedItem, model, controller.signal),
+  );
+  const promise = Promise.race([review, deadline]).finally(() => {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  });
+
+  return { startedAt, promise };
+}
+
+function failureKind(error: unknown): ReviewerFailureKind {
+  if (error instanceof ReviewerTimeoutError) {
+    return 'timeout';
+  }
+
+  const name =
+    typeof error === 'object' && error !== null && 'name' in error
+      ? String(error.name)
+      : '';
+  const text = `${name} ${readableError(error)}`;
+  return /(?:schema|zod|contract|validation|invalid json|json parse)/iu.test(text)
+    ? 'schema'
+    : 'error';
+}
+
+/** Render arbitrary promise rejection reasons without collapsing objects. */
+function readableError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message || error.name;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (error === null) {
+    return 'null';
+  }
+  if (error === undefined) {
+    return 'undefined';
+  }
+
+  try {
+    const serialized = JSON.stringify(error);
+    if (serialized !== undefined) {
+      return serialized;
+    }
+  } catch {
+    // Fall through to a stable description for cyclic or exotic objects.
+  }
+
+  return `Unserializable reviewer failure (${typeof error})`;
 }

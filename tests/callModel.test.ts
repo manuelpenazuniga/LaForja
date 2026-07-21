@@ -134,7 +134,7 @@ async function withinMs<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 // ---------------------------------------------------------------------------
 
-describe.skip('callModel — happy path', () => {
+describe('callModel — happy path', () => {
   it('returns the parsed contract with full telemetry', async () => {
     const calls: ModelTransportRequest[] = [];
     const transport: ModelTransport = async (req) => {
@@ -247,7 +247,7 @@ describe.skip('callModel — happy path', () => {
   });
 });
 
-describe.skip('callModel — retry EXACTLY once (hard constraint 3)', () => {
+describe('callModel — retry EXACTLY once (hard constraint 3)', () => {
   it('recovers when the first attempt is malformed and the second is valid', async () => {
     const { transport, calls } = scriptedTransport(MALFORMED, JSON.stringify(VALID_AMBIGUITY));
 
@@ -309,7 +309,7 @@ describe.skip('callModel — retry EXACTLY once (hard constraint 3)', () => {
   });
 });
 
-describe.skip('callModel — semantic refusal (schema-valid shape, contract violated)', () => {
+describe('callModel — semantic refusal (schema-valid shape, contract violated)', () => {
   it('rejects an ambiguity payload whose two answers are equal, after one retry', async () => {
     // This is the load-bearing case for the whole evidence-contract idea: the
     // JSON is well-formed and every field is present, but the finding is not an
@@ -372,7 +372,7 @@ describe.skip('callModel — semantic refusal (schema-valid shape, contract viol
   });
 });
 
-describe.skip('callModel — transport failure and timeout (the call must never hang)', () => {
+describe('callModel — transport failure and timeout (the call must never hang)', () => {
   it('surfaces a network rejection readably', async () => {
     const transport: ModelTransport = async () => {
       throw new Error('ECONNRESET: socket hang up');
@@ -423,17 +423,29 @@ describe.skip('callModel — transport failure and timeout (the call must never 
   });
 
   it('does not leave a timer running after a fast success', async () => {
-    // A dangling deadline timer keeps the Node process alive after the run ends.
+    // A dangling deadline timer keeps the Node process alive after the run ends,
+    // so callModel must clear its deadline on the success path too.
+    //
+    // Measure the DELTA, not the absolute count. The test runner keeps its own
+    // per-test timeout alive while this body executes, so asserting an absolute
+    // zero here measures the harness rather than the wrapper: it passes outside
+    // vitest and fails inside it, for reasons that have nothing to do with the
+    // code under test. Verified directly — with a fake transport and a 30s
+    // deadline, callModel's before/after delta is 0.
+    const activeTimers = (): number =>
+      (process.getActiveResourcesInfo?.() ?? []).filter((r) => r === 'Timeout').length;
+
     const transport: ModelTransport = async () => ({ text: JSON.stringify(VALID_AMBIGUITY) });
 
+    const before = activeTimers();
     await callModel<Ambiguity>(ambiguityArgs({ timeoutMs: 30_000 }), transport);
+    const after = activeTimers();
 
-    const pending = process.getActiveResourcesInfo?.().filter((r) => r === 'Timeout') ?? [];
-    expect(pending.length).toBe(0);
+    expect(after).toBe(before);
   });
 });
 
-describe.skip('callModel — compliance gate runs BEFORE the transport (hard constraint 4)', () => {
+describe('callModel — compliance gate runs BEFORE the transport (hard constraint 4)', () => {
   it('refuses a non-gpt-5.6 model and NEVER invokes the transport', async () => {
     // This is the assertion that makes "the runtime uses only gpt-5.6" a fact
     // rather than a claim: the guard is not merely present, it is upstream of
@@ -550,7 +562,7 @@ describe('openaiTransport — enforces compliance itself (defence in depth)', ()
   });
 });
 
-describe.skip('callModel — untrusted-item delimiter boundary survives to the wire', () => {
+describe('callModel — untrusted-item delimiter boundary survives to the wire', () => {
   it('sends exactly one open and one close delimiter even when the stem pastes the close token', async () => {
     // End to end: the hardening in `delimitItem` is only worth anything if the
     // payload that reaches the transport still carries a single balanced block.
@@ -586,7 +598,7 @@ describe.skip('callModel — untrusted-item delimiter boundary survives to the w
   });
 });
 
-describe.skip('callModel — the seam itself', () => {
+describe('callModel — the seam itself', () => {
   it('defaults to the real transport when none is injected', async () => {
     // Production behaviour must be the default; injection is opt-in. Until Codex
     // implements it, the real transport throws its TODO — which is exactly how we

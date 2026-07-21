@@ -2,9 +2,8 @@
  * LA FORJA — gauntlet orchestration spec (doc §7.1, §7.4, §8).
  *
  * CONVENTION (Claude/Codex split): `runGauntlet` in src/reviewers/orchestrator.ts
- * is CODEX-owned and currently a throwing stub, so every suite here is
- * `describe.skip`. Nothing below is a placeholder: these are the real acceptance
- * assertions. Codex removes the `.skip` as the implementation lands.
+ * is CODEX-owned. These are its acceptance assertions; the suite stays fully
+ * enabled so orchestration regressions fail CI.
  *
  * THERE IS NO NETWORK IN THIS FILE, AND THAT IS THE POINT. `runGauntlet` takes a
  * `GauntletDeps` bundle whose members are exactly the things that touch the
@@ -251,7 +250,7 @@ async function runTimed(
 // ---------------------------------------------------------------------------
 // 1. THE HEADLINE PROPERTY — a partial failure never breaks the run.
 // ---------------------------------------------------------------------------
-describe.skip('runGauntlet — a partial failure never breaks the run', () => {
+describe('runGauntlet — a partial failure never breaks the run', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -339,7 +338,7 @@ describe.skip('runGauntlet — a partial failure never breaks the run', () => {
 // ---------------------------------------------------------------------------
 // 2. TOTAL FAILURE IS NOT A CLEAN ITEM.
 // ---------------------------------------------------------------------------
-describe.skip('runGauntlet — three failures are not a clean gauntlet', () => {
+describe('runGauntlet — three failures are not a clean gauntlet', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -421,7 +420,7 @@ describe.skip('runGauntlet — three failures are not a clean gauntlet', () => {
 // ---------------------------------------------------------------------------
 // 3. CONCURRENCY — the three reviewers overlap in time.
 // ---------------------------------------------------------------------------
-describe.skip('runGauntlet — the three reviewers run concurrently', () => {
+describe('runGauntlet — the three reviewers run concurrently', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -526,7 +525,7 @@ describe.skip('runGauntlet — the three reviewers run concurrently', () => {
 // ---------------------------------------------------------------------------
 // 4. PER-REVIEWER TIMEOUT — bounded individually, never as a batch.
 // ---------------------------------------------------------------------------
-describe.skip('runGauntlet — per-reviewer timeout', () => {
+describe('runGauntlet — per-reviewer timeout', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -615,7 +614,7 @@ describe.skip('runGauntlet — per-reviewer timeout', () => {
 // ---------------------------------------------------------------------------
 // 5. THE DETERMINISTIC PROBE — no model call, so no model failure can stop it.
 // ---------------------------------------------------------------------------
-describe.skip('runGauntlet — the deterministic item_probe', () => {
+describe('runGauntlet — the deterministic item_probe', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -697,7 +696,7 @@ describe.skip('runGauntlet — the deterministic item_probe', () => {
 // ---------------------------------------------------------------------------
 // 6. THE ITEM IS WRAPPED EXACTLY ONCE (hard constraint 1).
 // ---------------------------------------------------------------------------
-describe.skip('runGauntlet — untrusted item text is wrapped exactly once', () => {
+describe('runGauntlet — untrusted item text is wrapped exactly once', () => {
   it('hands every reviewer a string with exactly one open and one close delimiter', async () => {
     const ambiguity = resolvingReviewer(AMBIGUITY_FINDING);
     const discipline = resolvingReviewer(DISCIPLINE_FINDING);
@@ -792,7 +791,7 @@ describe.skip('runGauntlet — untrusted item text is wrapped exactly once', () 
 // ---------------------------------------------------------------------------
 // 7. THE CONFIG MATRIX (doc §8).
 // ---------------------------------------------------------------------------
-describe.skip('runGauntlet — eval configs', () => {
+describe('runGauntlet — eval configs', () => {
   it('"general-reviewer" runs a SINGLE reviewer and none of the three specialists', async () => {
     const ambiguity = resolvingReviewer(AMBIGUITY_FINDING);
     const discipline = resolvingReviewer(DISCIPLINE_FINDING);
@@ -897,7 +896,7 @@ describe.skip('runGauntlet — eval configs', () => {
 // ---------------------------------------------------------------------------
 // 8. MULTI_AGENT_VARIANT IS EVAL-ONLY (doc §7.4).
 // ---------------------------------------------------------------------------
-describe.skip('runGauntlet — MULTI_AGENT_VARIANT is never the default path', () => {
+describe('runGauntlet — MULTI_AGENT_VARIANT is never the default path', () => {
   let previous: string | undefined;
 
   beforeEach(() => {

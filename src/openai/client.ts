@@ -3,7 +3,7 @@
  *
  * OWNER: Codex (this is a model call site). Claude provides the typed contract,
  * the untrusted-input delimiters, and the telemetry shape; Codex implements the
- * actual API call + Zod-validate + retry-once (hard constraint 3).
+ * bounded transport wrapper + Zod-validate + retry-once (hard constraint 3).
  *
  * Hard constraints enforced here:
  *  1. Untrusted item text MUST be wrapped by the caller and passed as
@@ -287,8 +287,9 @@ export interface ModelCallResult<T> {
  * unchanged; `transport` is an appended optional parameter, so injecting a fake
  * is opt-in and production behaviour is the default.
  *
- * TODO(codex): implement the validate / retry-once / telemetry logic AROUND the
- * transport. Do NOT put any HTTP here — the network lives below the seam.
+ * IMPLEMENTATION: validate / retry-once / timeout / telemetry logic AROUND the
+ * transport. There is deliberately no HTTP here — the network lives below the
+ * seam.
  *  1. COMPLIANCE GATE FIRST. Call `assertRuntimeCompliance(args.model)` BEFORE
  *     constructing a request or touching `transport`. A non-allowlisted model
  *     must never reach the wire, so this throw must be unreachable-past
@@ -333,11 +334,104 @@ export async function callModel<T>(
   args: ModelCallArgs<T>,
   transport: ModelTransport = openaiTransport,
 ): Promise<ModelCallResult<T>> {
-  void assertRuntimeCompliance; // steps 1 and 7
-  void isCompliantModel; // step 8
-  void promptHash; // step 8
-  void transport;
-  throw new Error(
-    'TODO(codex): implement bounded model call with Zod-validate + retry-once over ModelTransport',
-  );
+  // This must remain ahead of every possible transport invocation.
+  assertRuntimeCompliance(args.model);
+
+  const startedAt = Date.now();
+  const timeoutMs = args.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const callContext = args.reviewerType ?? args.callSite;
+  let repairNudge: string | undefined;
+
+  for (const attempt of [0, 1] as const) {
+    const controller = new AbortController();
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => {
+        controller.abort();
+        reject(
+          new Error(
+            `Model call timed out after ${timeoutMs}ms for ${callContext} ` +
+              `(prompt ${args.promptVersion}, attempt ${attempt + 1}/2).`,
+          ),
+        );
+      }, timeoutMs);
+      timeout.unref();
+    });
+
+    const request: ModelTransportRequest = {
+      model: args.model,
+      system: args.system,
+      delimitedItem: args.delimitedItem,
+      schema: args.schema,
+      schemaName: args.promptVersion,
+      attempt,
+      ...(repairNudge === undefined ? {} : { repairNudge }),
+      signal: controller.signal,
+      timeoutMs,
+      promptVersion: args.promptVersion,
+      callSite: args.callSite,
+      ...(args.reviewerType === undefined ? {} : { reviewerType: args.reviewerType }),
+    };
+
+    let response: ModelTransportResponse;
+    try {
+      response = await Promise.race([transport(request), timeoutPromise]);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Model transport failed for ${callContext} ` +
+          `(prompt ${args.promptVersion}, attempt ${attempt + 1}/2): ${detail}`,
+        { cause: error },
+      );
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+    }
+
+    const modelId = response.modelId ?? args.model;
+    // The provider echo is evidence of what ran, so it is a hard post-call gate.
+    assertRuntimeCompliance(modelId);
+
+    let parsedJson: unknown;
+    let validationDetail: string;
+    try {
+      parsedJson = JSON.parse(response.text) as unknown;
+      const parsedContract = args.schema.safeParse(parsedJson);
+      if (parsedContract.success) {
+        return {
+          data: parsedContract.data,
+          raw: response.text,
+          modelId,
+          modelFamilyOk: isCompliantModel(modelId),
+          latencyMs: Date.now() - startedAt,
+          tokensIn: response.tokensIn,
+          tokensOut: response.tokensOut,
+          costUsd: response.costUsd,
+          promptVersion: args.promptVersion,
+          promptHash: promptHash(args.system),
+          schemaValid: true,
+        };
+      }
+      validationDetail = JSON.stringify(parsedContract.error.issues);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      validationDetail = `Invalid JSON: ${detail}`;
+    }
+
+    if (attempt === 0) {
+      repairNudge =
+        `Your previous response did not satisfy the ${args.promptVersion} contract. ` +
+        `Return only valid JSON matching the contract. Validation failure: ${validationDetail}`;
+      continue;
+    }
+
+    throw new Error(
+      `Model contract validation failed for ${callContext} ` +
+        `(call site ${args.callSite}, prompt ${args.promptVersion}) after 2 attempts. ` +
+        `Validation issues: ${validationDetail}. Raw response: ${response.text}`,
+    );
+  }
+
+  // The fixed tuple above is exhaustive; this protects against future edits.
+  throw new Error(`Model call exhausted its attempt budget for prompt ${args.promptVersion}.`);
 }
