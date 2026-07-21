@@ -40,7 +40,7 @@ export interface AdjudicationResult {
  *  - Assign status: accepted | rejected | abstained | hypothesis. ABSTAIN when a
  *    claim cannot be verified (no sufficient source / solver inconclusive).
  *  - nextState = 'CHALLENGED' if any accepted check exists, else 'DEFENSE'.
- * Reference: doc §6.2 ("etapa separada de adjudicación").
+ * Reference: doc §6.2 ("separate adjudication step").
  */
 export function adjudicate(_orchestration: OrchestrationResult, _adjudicatorModel: string): AdjudicationResult {
   throw new Error('TODO(codex): implement separate adjudication (validate, dedupe, assign, abstain)');

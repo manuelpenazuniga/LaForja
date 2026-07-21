@@ -13,8 +13,9 @@ Copyright (c) 2026 Manuel Peña Zúñiga (LA FORJA)
 1. ITEM CONTENT — CC BY 4.0
 -------------------------------------------------------------------------------
 
-Scope. The CC BY 4.0 license applies to the **original, team-authored exam item
-content** in this repository, and to nothing else:
+Scope. The CC BY 4.0 license applies to the **original, team-authored
+high-school/college mathematics item content** in this repository, and to
+nothing else:
 
   - src/eval/smoke/dev/*.json      (labeled smoke set, dev split)
   - src/eval/smoke/holdout/*.json  (labeled smoke set, holdout split)
@@ -42,13 +43,10 @@ Attribution line. When reusing the item content, credit it as:
 
 Provenance and exclusions — these are hard rules, not preferences:
 
-  - ZERO DEMRE CONTENT. No official PAES item, passage, figure or answer key
-    appears in this repository, in whole or in part. Every item here was written
-    by the team for this project.
-  - Official taxonomy is REFERENCED BY LABEL WITH ATTRIBUTION ONLY. Axis and
-    skill labels are cited to name what an item targets. No taxonomy text is
-    republished. Attribution is not a substitute for a license, which is exactly
-    why nothing is reproduced — only referenced.
+  - ORIGINALS ONLY. Every item in this repository is a high-school/college
+    mathematics item written by the team for this project. No item, stem,
+    passage, figure, answer key or taxonomy text from any exam body, ministry,
+    publisher or third-party item bank appears here, in whole or in part.
   - CONTRIBUTOR CONTENT IS NOT COVERED. Items authored by testers or visitors of
     the public demo are private and ephemeral. They are never published and are
     never placed under this or any other license. No claim is made about the

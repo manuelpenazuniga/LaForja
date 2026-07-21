@@ -82,7 +82,7 @@ export type Citation = z.infer<typeof CitationSchema>;
 
 /**
  * Structured artifact of a BOUNDED SOLVER run (doc §6.2: verification by
- * "cálculo reproducible/solver acotado"). `problem_kind` mirrors
+ * "reproducible computation / bounded solver"). `problem_kind` mirrors
  * `ProbabilityProblem['kind']` in src/solver/probability.ts (Codex-owned);
  * `computed_value` is the EXACT rational answer as a string ("1/11", "0", "1"),
  * never a lossy decimal.

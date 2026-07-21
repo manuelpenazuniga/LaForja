@@ -117,7 +117,7 @@ export type RunIndex = 1 | 2 | 3;
 
 /**
  * Settings doc §8 requires to be IDENTICAL across the 3 runs of a config
- * ("con modelo, razonamiento, contexto y presupuesto idénticos"). Recording
+ * ("identical model, reasoning, context and budget"). Recording
  * them in every artifact is what lets a reader PROVE the runs were comparable
  * instead of taking our word for it; a diff across the 3 reports of a config
  * must be empty for these fields.

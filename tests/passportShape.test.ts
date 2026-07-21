@@ -17,7 +17,7 @@ import type { DefenseRubric } from '@/core/types';
 
 /**
  * Field names that may never exist in any schema, type, form or column
- * (English + Spanish, since the exam context is Chilean).
+ * (English + Spanish, since items may be authored in either language).
  */
 const FORBIDDEN_PII_TOKENS = [
   'school',
@@ -93,7 +93,7 @@ const passport: Passport = {
   itemId: 'itm_demo_two_children',
   itemVersionId: 'ver_demo_v2',
   authorPseudonym: 'herrero-azul-31',
-  provenance: 'Team-authored original item (LA FORJA), no DEMRE content.',
+  provenance: 'Team-authored original item (LA FORJA), no third-party content.',
   license: 'CC-BY-4.0',
   discipline: 'probability',
   acceptedAttacks: [

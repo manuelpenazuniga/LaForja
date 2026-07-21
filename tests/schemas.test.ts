@@ -46,13 +46,14 @@ function omit(fixture: Record<string, unknown>, field: string): Record<string, u
   return clone;
 }
 
-// Content fixtures are in Spanish on purpose: the exam is Chilean (PAES).
+// Content fixtures use the demo discipline (probability), which is universal in
+// high-school and introductory college mathematics.
 const FULL_CITATION = {
-  source_id: 'forja-corpus/probabilidad-condicional',
+  source_id: 'forja-corpus/conditional-probability',
   version_date: '2025-07-18',
   license: 'CC-BY-4.0',
-  excerpt: 'La probabilidad condicional P(A|B) se define como P(A ∩ B) / P(B), con P(B) > 0.',
-  relevance: 'Fija la lectura "al menos uno es varon" como condicionamiento sobre un evento.',
+  excerpt: 'Conditional probability P(A|B) is defined as P(A ∩ B) / P(B), with P(B) > 0.',
+  relevance: 'Fixes the reading "at least one is a boy" as conditioning on an event.',
 };
 
 /** A recorded bounded-solver run: what makes a solver-grounded verdict provable. */

@@ -1,26 +1,26 @@
 {
   "_license": "CC-BY-4.0",
-  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
   "id": "factual-error-003",
   "author_labeled": true,
   "split": "dev",
   "category": "factual_error",
   "discipline": "probability",
-  "stem": "Se lanza un dado justo de seis caras dos veces consecutivas. ¿Cuál es la probabilidad de obtener al menos un 5?",
+  "stem": "A fair six-sided die is rolled twice in a row. What is the probability of getting at least one 5?",
   "options": ["1/3", "11/36", "2/36", "25/36"],
   "correct_key": "A",
-  "author_rationale": "El autor marcó 1/3 sumando las probabilidades de cada lanzamiento: 1/6 + 1/6 = 2/6 = 1/3. Ese razonamiento es INCORRECTO: la regla de la suma solo aplica a eventos mutuamente excluyentes, y aquí ambos lanzamientos pueden dar 5 simultáneamente, de modo que el caso (5,5) se cuenta dos veces.",
+  "author_rationale": "The author marked 1/3 by adding the probabilities of each roll: 1/6 + 1/6 = 2/6 = 1/3. That reasoning is INCORRECT: the addition rule applies only to mutually exclusive events, and here both rolls can show a 5 at the same time, so the case (5,5) is counted twice.",
   "intended_defect": {
     "type": "factual_error",
-    "description": "La clave marcada (1/3) sobrecuenta el resultado (5,5). El enunciado NO es ambiguo: 'al menos un 5' está explícito. El error es puramente de cálculo.",
-    "expected_finding": "El verificador acotado debe calcular por complemento P(al menos un 5) = 1 - (5/6)² = 1 - 25/36 = 11/36, contradiciendo la clave marcada. Nótese que 11/36 ≠ 12/36 = 1/3, y la diferencia es exactamente el caso (5,5) contado dos veces.",
+    "description": "The marked key (1/3) double-counts the outcome (5,5). The stem is NOT ambiguous: 'at least one 5' is explicit. The error is purely one of calculation.",
+    "expected_finding": "The bounded solver must compute, via the complement, P(at least one 5) = 1 - (5/6)² = 1 - 25/36 = 11/36, contradicting the marked key. Note that 11/36 ≠ 12/36 = 1/3, and the difference is exactly the case (5,5) counted twice.",
     "true_answer": "11/36"
   },
   "source": {
     "source_id": "forja-corpus/addition-rule-and-complement",
     "version_date": "2025-07-18",
     "license": "CC-BY-4.0",
-    "excerpt": "La regla P(A ∪ B) = P(A) + P(B) es válida únicamente cuando A y B son mutuamente excluyentes. En el caso general P(A ∪ B) = P(A) + P(B) - P(A ∩ B). Para eventos independientes repetidos suele ser más simple el complemento: P(al menos uno) = 1 - P(ninguno).",
-    "relevance": "Identifica exactamente el paso omitido por el autor: restar P(A ∩ B), es decir el caso en que ambos lanzamientos dan 5."
+    "excerpt": "The rule P(A ∪ B) = P(A) + P(B) holds only when A and B are mutually exclusive. In the general case P(A ∪ B) = P(A) + P(B) - P(A ∩ B). For repeated independent events the complement is usually simpler: P(at least one) = 1 - P(none).",
+    "relevance": "Identifies exactly the step the author omitted: subtracting P(A ∩ B), that is, the case in which both rolls show a 5."
   }
 }

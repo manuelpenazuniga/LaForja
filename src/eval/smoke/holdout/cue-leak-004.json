@@ -1,24 +1,24 @@
 {
   "_license": "CC-BY-4.0",
-  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
   "id": "cue-leak-004",
   "author_labeled": true,
   "split": "holdout",
   "category": "cue_leak",
   "discipline": "probability",
-  "stem": "Al lanzar un dado justo de seis caras, ¿qué representa el espacio muestral del experimento?",
+  "stem": "A fair die with faces numbered 1, 2, 3, 4, 5 and 6 is rolled once. What does the sample space of this experiment represent?",
   "options": [
-    "El número 6",
-    "El conjunto de todos los resultados posibles del experimento, es decir, {1, 2, 3, 4, 5, 6}",
-    "La probabilidad",
-    "El promedio"
+    "The number 6",
+    "The set of all the possible outcomes of the experiment, that is, the faces 1, 2, 3, 4, 5 and 6 of the fair die",
+    "The probability",
+    "The average"
   ],
   "correct_key": "B",
-  "author_rationale": "El espacio muestral es el conjunto de resultados posibles. El autor no notó que la alternativa correcta es varias veces más larga que las otras tres y que repite las palabras 'experimento' y 'resultados' del enunciado.",
+  "author_rationale": "The sample space is the set of possible outcomes. The author did not notice that the correct option is several times longer than the other three and that it repeats the words 'experiment', 'faces', 'fair die' and the six face values listed in the stem.",
   "intended_defect": {
     "type": "cue_leak",
-    "description": "Fuga por longitud y por solapamiento léxico: la alternativa correcta es la única desarrollada, mientras las tres restantes son sintagmas de dos o tres palabras. 'La probabilidad' y 'El promedio' no son distractores plausibles, ya que no corresponden a ninguna confusión conceptual concreta sobre el espacio muestral.",
-    "expected_finding": "item_probe debe levantar answer_length_flag y lexical_overlap_flag. El revisor de distractores debe reportar que 'La probabilidad' y 'El promedio' son distractores débiles sin error hipotetizado defendible; un distractor plausible sería 'El conjunto {1, 2, 3}' (confundir el espacio muestral con un evento)."
+    "description": "Leak by length and by lexical overlap: the correct option is the only developed one, while the remaining three are phrases of two or three words, and it echoes the stem's own listing of the faces. 'The probability' and 'The average' are not plausible distractors, since they correspond to no concrete conceptual confusion about the sample space.",
+    "expected_finding": "item_probe must raise answer_length_flag and lexical_overlap_flag. The distractor reviewer must report that 'The probability' and 'The average' are weak distractors with no defensible hypothesized error; a plausible distractor would be 'The set {1, 2, 3}' (confusing the sample space with an event)."
   },
   "source": null
 }

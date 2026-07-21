@@ -1,15 +1,15 @@
 {
   "_license": "CC-BY-4.0",
-  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
   "id": "clean-002",
   "author_labeled": true,
   "split": "holdout",
   "category": "clean",
   "discipline": "probability",
-  "stem": "Se lanza una moneda justa tres veces consecutivas. ¿Cuál es la probabilidad de obtener exactamente dos caras?",
+  "stem": "A fair coin is tossed three times in a row. What is the probability of getting exactly two heads?",
   "options": ["3/8", "1/8", "1/2", "1/4"],
   "correct_key": "A",
-  "author_rationale": "Espacio equiprobable de 2^3 = 8 secuencias; las favorables son CCS, CSC y SCC, es decir 3. P = 3/8. Distractores: 1/8 corresponde a fijar una secuencia concreta, 1/2 a la simetría ingenua, 1/4 a contar solo dos secuencias favorables.",
+  "author_rationale": "Equiprobable space of 2^3 = 8 sequences; the favorable ones are HHT, HTH and THH, that is 3. P = 3/8. Distractors: 1/8 corresponds to fixing one specific sequence, 1/2 to naive symmetry, and 1/4 to counting only two favorable sequences.",
   "intended_defect": null,
   "source": null
 }

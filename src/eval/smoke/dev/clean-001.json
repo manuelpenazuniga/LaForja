@@ -1,15 +1,15 @@
 {
   "_license": "CC-BY-4.0",
-  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
   "id": "clean-001",
   "author_labeled": true,
   "split": "dev",
   "category": "clean",
   "discipline": "probability",
-  "stem": "Una urna contiene 3 bolas rojas y 5 bolas azules, indistinguibles al tacto. Se extrae una bola al azar. ¿Cuál es la probabilidad de que la bola extraída sea roja?",
+  "stem": "An urn contains 3 red balls and 5 blue balls, indistinguishable by touch. One ball is drawn at random. What is the probability that the ball drawn is red?",
   "options": ["3/8", "5/8", "3/5", "1/2"],
   "correct_key": "A",
-  "author_rationale": "Espacio equiprobable de 8 bolas; 3 son favorables. P = 3/8. Los distractores capturan errores reales: 5/8 es el complemento, 3/5 es la razón rojas:azules en vez de rojas:total, 1/2 es la respuesta por simetría ingenua.",
+  "author_rationale": "Equiprobable space of 8 balls; 3 are favorable. P = 3/8. The distractors capture real errors: 5/8 is the complement, 3/5 is the red:blue ratio instead of red:total, and 1/2 is the answer produced by naive symmetry.",
   "intended_defect": null,
   "source": null
 }

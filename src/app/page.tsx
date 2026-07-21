@@ -18,9 +18,10 @@ export const dynamic = 'force-dynamic';
 /**
  * The seeded demo challenge, mirrored from prisma/seed.ts.
  *
- * Team-authored, CC-BY, zero DEMRE content. The two-children problem: the author
- * marks 1/3 reading "at least one is male", but the stem does not disambiguate,
- * so the reading "a specific child is male" yields 1/2. Two readings, two answers.
+ * Team-authored original, CC-BY. High-school / college probability, the demo
+ * discipline for the whole slice. The two-children problem: the author marks 1/3
+ * reading "at least one is a boy", but the stem does not disambiguate, so the
+ * reading "a specific child is a boy" yields 1/2. Two readings, two answers.
  *
  * This literal is the render fallback only. TODO(codex): replace it with a real
  * read of the seeded demo item (prisma via src/db/client.ts, or GET /api/session)
@@ -29,11 +30,11 @@ export const dynamic = 'force-dynamic';
 const DEMO_FIXTURE: StudioItem = {
   id: 'demo-local',
   versionNumber: 1,
-  stem: 'Una familia tiene dos hijos. Se sabe que uno de ellos es varón. ¿Cuál es la probabilidad de que ambos sean varones?',
+  stem: 'A family has two children. It is known that one of them is a boy. What is the probability that both are boys?',
   options: ['1/4', '1/3', '1/2', '2/3'],
   correctKey: 'B',
   authorRationale:
-    'Con la lectura "al menos uno es varón", el espacio se reduce a {VV, VM, MV} y solo VV es favorable, de modo que P = 1/3. Los distractores capturan errores reales: 1/4 ignora la información dada, 1/2 corresponde a la lectura en que se fija un hijo concreto, 2/3 invierte el cociente.',
+    'Under the reading "at least one is a boy", the sample space reduces to {BB, BG, GB} and only BB is favourable, so P = 1/3. The distractors capture real errors: 1/4 ignores the given information, 1/2 matches the reading in which one specific child is fixed, 2/3 inverts the ratio.',
 };
 
 export default function Page() {

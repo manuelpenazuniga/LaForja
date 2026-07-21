@@ -269,17 +269,17 @@ const CLASS_PROMISE: Record<CheckClass, { title: string; promise: string }> = {
   deterministic: {
     title: 'Deterministic',
     promise:
-      'Strict non-regression: the new version cannot reintroduce the failure. Fixed thresholds, recomputed in code.',
+      'The promise of this class is strict non-regression: a new version must not reintroduce the failure. Fixed thresholds, recomputed in code.',
   },
   counterexample: {
     title: 'Counterexample',
     promise:
-      'The construction is re-executed on the new version. If it still holds, the item does not publish.',
+      'The construction is meant to be re-executed against every new version. While it still holds, the item must not publish.',
   },
   semantic: {
     title: 'Semantic judgment',
     promise:
-      'Re-adjudicated on every version. Never described as an absolute guarantee; the result stays visible in the passport.',
+      'Re-adjudicated per version by design. Never stated as an absolute guarantee; the result stays visible in the passport.',
   },
 };
 
@@ -343,7 +343,7 @@ const ROADMAP: string[] = [
 const OPTION_KEYS = ['A', 'B', 'C', 'D', 'E'];
 
 const GUARANTEE_TEXT =
-  'Every repair re-runs all recorded counterexamples and checks. The system guarantees history execution and the non-regression of deterministic invariants; semantic judgments are re-adjudicated and shown in the passport.';
+  'The promise of the design: every repair re-runs all recorded counterexamples and checks, deterministic invariants must not regress, and semantic judgments are re-adjudicated and shown in the passport rather than treated as settled. The re-run engine that executes this is next.';
 
 // ---------------------------------------------------------------------------
 // Small pure helpers (presentation only)
@@ -698,7 +698,10 @@ export default function StudioClient({
   }, [acceptedChecks]);
 
   const formEditable = state === 'DRAFT' && item !== null;
-  const repairEditable = (state === 'CHALLENGED' || state === 'DISPUTED') && item !== null;
+  // CHALLENGED only. DISPUTED is deliberately excluded: post-publication disputes
+  // are outside the winning slice, so no control on this page may open the
+  // NEW_DISPUTE / DISPUTE_REPAIR path (src/core/types.ts SCOPE NOTE).
+  const repairEditable = state === 'CHALLENGED' && item !== null;
 
   const workingDiff = useMemo(() => {
     if (!item || !draft) return [];
@@ -736,9 +739,9 @@ export default function StudioClient({
           </h1>
           <p className="tagline">
             <strong>Getting the right answer is not enough.</strong> Forge it, attack it,
-            defend it. The AI does not write the item and does not hand over a solution to
-            copy: it returns challenges and evidence. The repair and the defense belong to
-            the student.
+            defend it. High-school and college mathematics. By design the reviewers return
+            challenges and evidence; the item, the repair and the defense stay with the
+            student.
           </p>
         </div>
         <div className="masthead__meta">
@@ -757,6 +760,13 @@ export default function StudioClient({
               session · {session ? session.pseudonym : 'not started'}
             </span>
             <span className="tag">zero PII</span>
+          </div>
+          <div className="meta-row">
+            <span>scope</span>
+            <b>high-school / college mathematics</b>
+            <span>·</span>
+            <span>demo discipline</span>
+            <b>probability</b>
           </div>
           {timeToCounterexampleMs !== null ? (
             <div className="meta-row">
@@ -828,8 +838,8 @@ export default function StudioClient({
           </h2>
           <p className="onboard__copy">
             {item
-              ? 'The item below is deliberately defective. Send it through the gauntlet, read the counterexample, repair it, and defend the repair.'
-              : 'You get an original item with a real defect in it. Find the flaw, repair it, and watch the passport grow with your repair.'}
+              ? 'The item below is a deliberately defective probability item. The cycle it is built for: send it through the gauntlet, read the counterexample, repair it, defend the repair.'
+              : 'You get an original probability item with a real defect in it. The cycle is built to make you find the flaw, repair it, and watch the passport grow with your repair.'}
           </p>
           <div className="onboard__actions">
             <button
@@ -840,7 +850,7 @@ export default function StudioClient({
             >
               {busy === 'load' ? 'Loading…' : 'Load demo challenge'}
             </button>
-            <span className="btn-note">Team-authored · CC-BY · zero DEMRE content</span>
+            <span className="btn-note">Team-authored original · CC-BY · probability</span>
           </div>
         </div>
 
@@ -883,8 +893,8 @@ export default function StudioClient({
             </div>
             <p className="panel__lede">
               One original multiple-choice item and its author rationale. Published versions
-              are immutable, so every repair creates a new version instead of overwriting
-              this one.
+              are immutable by design, so a repair creates a new version instead of
+              overwriting this one.
             </p>
 
             <div className="panel__body form-grid">
@@ -971,7 +981,7 @@ export default function StudioClient({
                 {busy === 'gauntlet' ? 'Running the gauntlet…' : 'Start gauntlet'}
               </button>
               <span className="btn-note">
-                Three concurrent reviewers and one deterministic probe.
+                Three concurrent reviewers and one deterministic probe. Running them is next.
               </span>
             </div>
           </section>
@@ -981,14 +991,16 @@ export default function StudioClient({
             <div className="panel__head">
               <span className="panel__step">02 · Heat</span>
               <h2 className="panel__title">The gauntlet</h2>
+              <span className="tag tag--next">next</span>
               <span className="panel__aside">
                 {abstained > 0 ? `${abstained} abstained` : 'four independent lanes'}
               </span>
             </div>
             <p className="panel__lede">
-              Each lane carries its own evidence contract and fails on its own. A reviewer
-              that times out degrades its lane and the other lanes still report. Nothing is
-              collapsed into a single score.
+              Each lane carries its own evidence contract and is built to fail on its own: a
+              reviewer that times out degrades its lane while the other lanes still report,
+              and nothing is collapsed into a single score. The reviewer calls themselves are
+              next, so the lanes below stay empty until they are wired.
             </p>
 
             <div className="panel__body lanes">
@@ -1003,11 +1015,13 @@ export default function StudioClient({
             <div className="panel__head">
               <span className="panel__step">03 · Fracture</span>
               <h2 className="panel__title">Accepted counterexample</h2>
+              <span className="tag tag--next">next</span>
               <span className="panel__aside">separate adjudication step</span>
             </div>
             <p className="panel__lede">
-              This is not a score. It is a construction anyone can re-execute: two readings
-              of the same stem that produce two different answers.
+              What this surface is built to show is not a score but a construction anyone can
+              re-execute: two readings of the same stem that produce two different answers.
+              The separate adjudication step that accepts one is next.
             </p>
 
             <div className="panel__body">
@@ -1020,7 +1034,8 @@ export default function StudioClient({
               ) : (
                 <div className="card card--flat">
                   <p className="lane__empty">
-                    No accepted counterexample yet. Start the gauntlet to attack the item.
+                    No accepted counterexample. Nothing can be accepted until the gauntlet and
+                    the adjudication step are wired — both are next.
                   </p>
                 </div>
               )}
@@ -1047,6 +1062,7 @@ export default function StudioClient({
             <div className="panel__head">
               <span className="panel__step">04 · Hammer</span>
               <h2 className="panel__title">Repair</h2>
+              <span className="tag tag--next">next</span>
               <span className="panel__aside">
                 {previousVersion
                   ? `v${previousVersion.versionNumber} → v${item.versionNumber}`
@@ -1054,8 +1070,9 @@ export default function StudioClient({
               </span>
             </div>
             <p className="panel__lede">
-              A repair never edits the recorded version. It creates the next one, and the
-              diff below is what the passport carries.
+              A repair never edits the recorded version; it creates the next one, and the diff
+              below is what the passport is built to carry. The word-level diff renders live
+              from what you type. Writing the new version is next.
             </p>
 
             <div className="panel__body">
@@ -1103,7 +1120,8 @@ export default function StudioClient({
                   {busy === 'repair' ? 'Forging the new version…' : 'Submit repair'}
                 </button>
                 <span className="btn-note">
-                  Submitting creates a new version and re-runs the full check history.
+                  Submitting is designed to create a new version and re-run the full check
+                  history. Both are next.
                 </span>
               </div>
             </div>
@@ -1114,6 +1132,7 @@ export default function StudioClient({
             <div className="panel__head">
               <span className="panel__step">05 · Quench</span>
               <h2 className="panel__title">History re-run</h2>
+              <span className="tag tag--next">next</span>
               <span className="panel__aside">grouped by check class</span>
             </div>
             <p className="guarantee">{GUARANTEE_TEXT}</p>
@@ -1135,8 +1154,8 @@ export default function StudioClient({
                     <div className="class-group__list">
                       {outcomes.length === 0 ? (
                         <p className="lane__empty">
-                          Nothing recorded in this class yet. Submit a repair to re-run the
-                          history.
+                          Nothing recorded in this class. The re-run that would fill it is
+                          next.
                         </p>
                       ) : (
                         outcomes.map((outcome) => (
@@ -1165,15 +1184,16 @@ export default function StudioClient({
             <div className="panel__head">
               <span className="panel__step">06 · Proof</span>
               <h2 className="panel__title">Written defense</h2>
+              <span className="tag tag--next">next</span>
               <span className="panel__aside">
                 two adaptive questions · rubric 3 × 0-2 · publish at ≥ 4/6
               </span>
             </div>
             <p className="panel__lede">
-              The model challenges; the student owns the repair and the defense. Each rubric
-              dimension carries the textual evidence it was scored on. If the evaluator
-              itself fails, the item goes to DEFENSE_INCONCLUSIVE — never an automatic
-              reject.
+              The reviewers challenge; the student owns the repair and the defense. Each
+              rubric dimension is built to carry the textual evidence it was scored on, and an
+              evaluator that fails sends the item to DEFENSE_INCONCLUSIVE rather than to an
+              automatic reject. Question generation and rubric scoring are next.
             </p>
 
             <div className="panel__body viva">
@@ -1181,7 +1201,8 @@ export default function StudioClient({
                 {questions.length === 0 ? (
                   <div className="card">
                     <p className="lane__empty">
-                      No questions yet. Open the defense once the history re-run is clean.
+                      No questions. The defense opens after a clean history re-run; generating
+                      the two questions is next.
                     </p>
                     <div className="form-footer">
                       <button
@@ -1240,12 +1261,14 @@ export default function StudioClient({
             <div className="panel__head">
               <span className="panel__step">07 · Stamp</span>
               <h2 className="panel__title">Item passport</h2>
+              <span className="tag tag--next">next</span>
               <span className="panel__aside">item level only, never student level</span>
             </div>
             <p className="panel__lede">
-              What gets published is an auditable learning trace: provenance and license,
-              accepted attacks, the history re-run by class, the discipline verdict with its
-              full citation or unverified, the rubric, and the version diff.
+              What publishing is designed to produce is an auditable learning trace:
+              provenance and license, accepted attacks, the history re-run by class, the
+              discipline verdict with its full citation or marked unverified, the rubric, and
+              the version diff. Assembling it is next.
             </p>
 
             <div className="panel__body">
@@ -1255,7 +1278,7 @@ export default function StudioClient({
                 <div className="card card--flat">
                   <p className="lane__empty">
                     The passport is stamped when the defense passes and the item reaches
-                    PUBLISHED.
+                    PUBLISHED. Assembling it is next.
                   </p>
                 </div>
               )}
@@ -1289,9 +1312,14 @@ export default function StudioClient({
 
       <footer className="colophon">
         <p>
+          <b>Scope.</b> High-school and college mathematics; the demo discipline is
+          probability. The mechanism is exam-agnostic — it was designed against the
+          constraints of a real high-stakes exam, which is where the domain expertise comes
+          from, not the boundary of where it applies.
+        </p>
+        <p>
           <b>Provenance.</b> Every item in this studio is team-authored and published under
-          CC-BY. Zero DEMRE content. Official taxonomy labels are referenced by name with
-          attribution only.
+          CC-BY. All content is original to the team, full stop.
         </p>
         <p>
           <b>Privacy.</b> Sessions are isolated and expire on their own. Authors appear as a
@@ -1300,8 +1328,8 @@ export default function StudioClient({
         </p>
         <p>
           <b>Models.</b> Reviewers run on {reviewerModel}; the separate adjudication step runs
-          on {adjudicatorModel}. Every run records the exact model id, latency, tokens and
-          prompt version.
+          on {adjudicatorModel}. Every run is recorded with the exact model id, latency,
+          tokens and prompt version; the calls that produce those records are next.
         </p>
       </footer>
     </main>
@@ -1341,7 +1369,7 @@ function LanePanel({ spec, lane }: { spec: LaneSpec; lane: LaneState }) {
         ) : null}
 
         {lane.status === 'idle' ? (
-          <p className="lane__empty">Waiting for the gauntlet.</p>
+          <p className="lane__empty">Idle. Wiring this lane to its source is next.</p>
         ) : null}
 
         {lane.contract ? <ContractView contract={lane.contract} /> : null}
@@ -1496,8 +1524,8 @@ function CounterexampleCard({
       </div>
 
       <p className="counterexample__verdict">
-        The contract is valid because the two answers differ. This construction is re-executed
-        on every new version: while it still holds, the item does not publish.
+        The contract is valid because the two answers differ. This construction is meant to be
+        re-executed against every new version: while it still holds, the item must not publish.
         {note ? ` ${note}` : ''}
       </p>
     </div>
@@ -1552,7 +1580,9 @@ function RubricCard({ rubric }: { rubric: DefenseRubric | null }) {
               </div>
             </div>
             <p className="dim__evidence">
-              {scored ? scored.evidence : 'Evidence appears here once the answer is scored.'}
+              {scored
+                ? scored.evidence
+                : 'Evidence appears here once rubric scoring is wired — that is next.'}
             </p>
           </div>
         );

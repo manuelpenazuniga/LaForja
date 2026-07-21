@@ -1,19 +1,19 @@
 {
   "_license": "CC-BY-4.0",
-  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
   "id": "ambiguous-003",
   "author_labeled": true,
   "split": "dev",
   "category": "ambiguous",
   "discipline": "probability",
-  "stem": "De una urna con 3 bolas rojas y 2 bolas azules se extraen dos bolas, una tras otra y sin reposición. ¿Cuál es la probabilidad de obtener una bola roja y una bola azul?",
+  "stem": "From an urn holding 3 red balls and 2 blue balls, two balls are drawn one after the other, without replacement. What is the probability of getting a red ball and a blue ball?",
   "options": ["3/5", "3/10", "1/2", "2/5"],
   "correct_key": "A",
-  "author_rationale": "El autor pensó en ambos órdenes posibles: P(roja luego azul) + P(azul luego roja) = (3/5)(2/4) + (2/5)(3/4) = 6/20 + 6/20 = 12/20 = 3/5.",
+  "author_rationale": "The author had both possible orders in mind: P(red then blue) + P(blue then red) = (3/5)(2/4) + (2/5)(3/4) = 6/20 + 6/20 = 12/20 = 3/5.",
   "intended_defect": {
     "type": "ambiguity",
-    "description": "El enunciado no declara si el orden de extracción importa. 'Obtener una bola roja y una azul' admite tanto la lectura sin orden (cualquiera de las dos secuencias) como la lectura con orden implícito por la redacción secuencial 'una tras otra'.",
-    "expected_finding": "Interpretación A = el orden no importa → (3/5)(2/4) + (2/5)(3/4) = 3/5. Interpretación B = primero roja y después azul → (3/5)(2/4) = 3/10. Las respuestas difieren, por lo que el ataque de ambigüedad es válido."
+    "description": "The stem never states whether the order of the draws matters. 'Getting a red ball and a blue ball' supports both the unordered reading (either of the two sequences) and the ordered reading implied by the sequential wording 'one after the other', where the red ball is the first one drawn.",
+    "expected_finding": "Reading A = order does not matter → (3/5)(2/4) + (2/5)(3/4) = 3/5. Reading B = red first, then blue → (3/5)(2/4) = 3/10. The answers differ, so the ambiguity attack is valid."
   },
   "source": null
 }

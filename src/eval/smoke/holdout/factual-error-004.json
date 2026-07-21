@@ -1,26 +1,26 @@
 {
   "_license": "CC-BY-4.0",
-  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
   "id": "factual-error-004",
   "author_labeled": true,
   "split": "holdout",
   "category": "factual_error",
   "discipline": "probability",
-  "stem": "Una urna contiene 5 bolas rojas y 3 bolas verdes. Se extrae una bola, se anota su color y se devuelve a la urna. Luego se extrae una segunda bola. ¿Cuál es la probabilidad de que ambas extracciones sean verdes?",
+  "stem": "An urn contains 5 red balls and 3 green balls. One ball is drawn, its color is recorded, and it is returned to the urn. A second ball is then drawn. What is the probability that both draws are green?",
   "options": ["3/28", "9/64", "6/64", "1/4"],
   "correct_key": "A",
-  "author_rationale": "El autor marcó 3/28 calculando (3/8)·(2/7), es decir tratando la segunda extracción sobre un conjunto reducido. Eso contradice el enunciado, que dice explícitamente que la bola SE DEVUELVE a la urna.",
+  "author_rationale": "The author marked 3/28 by computing (3/8)·(2/7), that is, by treating the second draw as happening over a reduced set. That contradicts the stem, which explicitly says the ball IS RETURNED to the urn.",
   "intended_defect": {
     "type": "factual_error",
-    "description": "La clave marcada (3/28) aplica muestreo sin reposición pese a que el enunciado establece reposición. Con reposición las dos extracciones son independientes y la composición de la urna no cambia.",
-    "expected_finding": "El verificador acotado debe calcular (3/8)·(3/8) = 9/64, contradiciendo la clave marcada. Este ítem es el espejo de factual-error-002: allí el autor aplicó reposición donde no correspondía, aquí omite la reposición que sí se declara.",
+    "description": "The marked key (3/28) applies sampling without replacement even though the stem establishes replacement. With replacement the two draws are independent and the composition of the urn does not change.",
+    "expected_finding": "The bounded solver must compute (3/8)·(3/8) = 9/64, contradicting the marked key. This item mirrors factual-error-002: there the author applied replacement where it did not belong, here the author drops the replacement that is explicitly stated.",
     "true_answer": "9/64"
   },
   "source": {
     "source_id": "forja-corpus/independence-and-replacement",
     "version_date": "2025-07-18",
     "license": "CC-BY-4.0",
-    "excerpt": "Cuando una extracción se realiza con reposición, la composición del conjunto se restaura antes de la siguiente extracción y los eventos resultantes son independientes: P(A₁ ∩ A₂) = P(A₁) · P(A₂), con ambos factores calculados sobre el mismo conjunto original.",
-    "relevance": "Establece que ambos factores deben evaluarse sobre las 8 bolas originales, que es exactamente el paso que el autor sustituyó por un conjunto reducido."
+    "excerpt": "When a draw is made with replacement, the composition of the set is restored before the next draw and the resulting events are independent: P(A₁ ∩ A₂) = P(A₁) · P(A₂), with both factors computed over the same original set.",
+    "relevance": "Establishes that both factors must be evaluated over the original 8 balls, which is exactly the step the author replaced with a reduced set."
   }
 }

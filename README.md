@@ -4,9 +4,20 @@
 
 > Getting the right answer is not enough. Forge it, attack it, defend it.
 
-LA FORJA is a PAES workshop where students author multiple-choice items and GPT-5.6
-reviewers try to break them with counterexamples. An item publishes only after a
-repair, a short written defense, and a re-run of its full check history.
+LA FORJA is a designed workshop for **high-school and college mathematics**: students
+author multiple-choice items, GPT-5.6 reviewers attack them with counterexamples, and an
+item publishes only after a repair, a short written defense, and a re-run of its full
+check history.
+
+The mechanism is **exam-agnostic by design** (doc §12): it targets any multiple-choice
+mathematics item, from any curriculum, in any country. It was designed against the
+constraints of a real high-stakes exam — that is where the assessment expertise comes
+from — and deliberately built to carry no dependency on that exam. The demo discipline
+is **probability**, a universal high-school/college topic where ambiguous wording and
+weak distractors are endemic.
+
+The paragraph above describes a design. The runtime that would execute it is almost
+entirely unimplemented — read the status note before anything else.
 
 > **Role of the AI (the only authorized formulation):** the AI does not generate the
 > initial item and does not hand over a canonical solution to copy. It returns
@@ -27,9 +38,10 @@ Concretely, as of this commit:
   vocabulary (`src/core/types.ts`), Zod evidence-contract schemas
   (`src/reviewers/schemas.ts`), the GPT-5.6 compliance guard
   (`src/config/models.ts`), prompt text and guardrail preambles, the Prisma data
-  model (`prisma/schema.prisma`, `prisma/seed.ts`), eval types and 8 authored smoke
-  fixtures (`src/eval/smoke/`), and small pure helpers
-  (`reduceFraction`, `meetsPublishThreshold`, `toJson`/`fromJson`).
+  model (`prisma/schema.prisma`, `prisma/seed.ts`), eval types and all 16 authored
+  smoke fixtures (`src/eval/smoke/`), small pure helpers
+  (`reduceFraction`, `meetsPublishThreshold`, `toJson`/`fromJson`), and the test
+  suite (207 passing, 101 skipped by design).
 - What is a **stub**: every runtime behavior. The reviewers, the orchestrator, the
   separate adjudication step, the bounded solver, the deterministic item probe, the
   state machine reducer, the history re-run, the defense scorer, the passport
@@ -98,8 +110,11 @@ This section is binding, and it stays true even after the matrix fills in.
   do not and cannot detect that. What we make observable is whether they can sustain
   concrete decisions under a written defense. The passport certifies the process of
   the item, never the person.
-- **Zero DEMRE content.** Items are team-authored. Official taxonomy is referenced by
-  label with attribution only.
+- **We do not claim coverage of any curriculum or exam.** The demo discipline is
+  probability and nothing else. No claim is made that the check taxonomy generalizes to
+  disciplines outside the bounded verifier's scope until that is measured.
+- **Every item in this repository is a team-authored original.** No item bank, no
+  passage and no answer key from any exam body is present, in whole or in part.
 - **Everything in this repo today is unrun scaffolding**, per the status note above.
 
 ## 4. Architecture
@@ -239,8 +254,8 @@ grep -rn "TODO(codex)" src
 The test suite is the second half of that punch-list. Tests covering already-working
 code must pass; tests covering Codex-owned stubs are written out in full but marked
 `describe.skip` / `it.skip`, so CI stays green and Codex's job is to delete the
-`.skip`. Those test files are **next** — the `tests/` directory does not exist in
-this commit yet.
+`.skip`. The `tests/` directory exists and the suite runs green: **207 tests pass and
+101 are skipped** — those 101 skips are exactly the Codex punch-list.
 
 ## 7. Evals
 
@@ -249,9 +264,9 @@ reporting rules it must follow; no result file exists.
 
 - **Labeled smoke set** — never called a gold set. **16 original items are required**
   (4 clean, 4 ambiguous, 4 with a disciplinary error and a source, 4 with cue leak or
-  weak distractors). **8 are authored today**; the remaining 8 are team-authored and
-  pending. All items are declared **author-labeled**: the same team designed both the
-  defects and the labels.
+  weak distractors). **All 16 are authored today** — 8 in `dev/` and 8 in `holdout/`.
+  All items are declared **author-labeled**: the same team designed both the defects
+  and the labels.
 - **Split** — `src/eval/smoke/dev/` is used to develop prompts and is **never
   reported as evaluation**; `src/eval/smoke/holdout/` is what gets reported.
 - **Three configurations** (`EVAL_CONFIGS` in `src/eval/types.ts`):
@@ -294,13 +309,16 @@ Notes, so the commands are not oversold:
 
 - `npm run db:seed` seeds the demo challenge used by the "Load demo challenge"
   onboarding: a two-children probability item whose defect is **ambiguity** ("at
-  least one is male" gives 1/3; "a specific child is male" gives 1/2 — two readings,
+  least one is a boy" gives 1/3; "a specific child is a boy" gives 1/2 — two readings,
   two answers).
-- `npm run dev` currently serves only the root layout (`src/app/layout.tsx`). The
-  pages and API routes are **next**.
-- `npm run test` has no test files to run in this commit; the suite is **next**.
-- `npm run secretscan` and the pre-commit hook wiring referenced by `prepare` are
-  **next**; `scripts/` and `.githooks/` do not exist yet.
+- `npm run dev` serves the root layout, the landing page and the studio shell. The
+  page renders, but every action it offers is wired to a `TODO(codex)` stub, so the
+  end-to-end flow is **next**. The API routes under `src/app/api/` exist as
+  request/response scaffolding; their handler bodies are **next**.
+- `npm run test` runs the suite: 207 pass, 101 are intentionally `describe.skip` /
+  `it.skip` (the Codex punch-list). Those skipped bodies are written out in full.
+- `npm run secretscan` and the pre-commit hook wiring referenced by `prepare` exist
+  (`scripts/secret-scan.mjs`, `.githooks/pre-commit`).
 - Never commit real secrets. `.env.example` is the only env file in git, and nothing
   secret may reach the client bundle.
 
@@ -321,8 +339,8 @@ from a real run; quoting a number before that would be invention.
 - Findings without evidence are labeled **hypotheses**, not defects.
 - The item probe is deliberately small: alternative length and lexical overlap
   between stem and answer, with published thresholds. Grammatical congruence was cut
-  (no demonstrable pure-code implementation in Spanish) and `bank_probe` is out of the
-  MVP entirely — answer-position distribution is a signal about a bank, not about an
+  (no demonstrable pure-code implementation that holds across natural languages) and
+  `bank_probe` is out of the MVP entirely — answer-position distribution is a signal about a bank, not about an
   item, and no bank exists yet.
 - Counterexamples may reveal the answer to the item. That is accepted by design: a
   counterexample without its answer is not reproducible.
@@ -348,14 +366,12 @@ from a real run; quoting a number before that would be invention.
 
 ## 10. Privacy and licenses
 
-- **CC-BY applies to team-authored items only.** Every smoke-set file carries its own
-  `_license` and `_attribution` fields.
+- **All items are team-authored originals under CC-BY, full stop.** Nothing is
+  reproduced from any exam body, publisher or third-party item bank. Every smoke-set
+  file carries its own `_license` and `_attribution` fields.
 - **Tester contributions are private or ephemeral and are never published.** We make
   no claim about the license of any future commons — that requires terms, consent and
   a right of withdrawal, and is post-hackathon roadmap only.
-- **Official taxonomy is referenced by label, with attribution only.** Attribution
-  does not replace a license, which is precisely why **no content is republished** —
-  only the axis label is referenced. **Zero DEMRE content** anywhere in this repo.
 - **Zero PII.** Authors are random pseudonyms. There is no school, city, name, email
   or age field in any schema, type, form or database column — including
   `prisma/schema.prisma`. There are no accounts.
@@ -396,9 +412,11 @@ Separated with dated evidence, per doc §9.
 
 **Pre-existing (before July 13, not built for this hackathon)**
 
-- Domain expertise in the Chilean PAES exam and prior edtech work (Entrena Tu PAES).
-  No code, content, item bank or model asset from that work is present in this
-  repository.
+- Assessment-design expertise from founding and running an edtech company in
+  high-stakes exam preparation. That is **evidence of domain expertise, not the scope
+  of this product**: the mechanism here was designed against the constraints of a real
+  high-stakes exam and built to be exam-agnostic. No code, content, item bank or model
+  asset from that prior work is present in this repository.
 - Applied agent-security practice, reused here as a discipline — untrusted-input
   delimiting, no write tools for reviewers, isolation of the public demo — not as
   imported code.

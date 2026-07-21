@@ -25,7 +25,12 @@ export const LENGTH_HIGH = 1.4; // correct option >= 1.4x mean length ⇒ flag
 export const LENGTH_LOW = 0.6; // correct option <= 0.6x mean length ⇒ flag
 export const OVERLAP_HIGH = 0.5; // >=50% of correct-answer tokens appear in the stem ⇒ flag
 
-/** Minimal Spanish + math stopword list (published; extend deliberately). */
+/**
+ * Minimal stopword list for the lexical-overlap formula. Bilingual (English +
+ * Spanish) so items authored in either language are tokenized the same way;
+ * more languages are next. Published constant — tests pin its membership, so
+ * extend deliberately, never silently.
+ */
 export const STOPWORDS: ReadonlySet<string> = new Set([
   'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'de', 'del', 'a', 'en',
   'y', 'o', 'que', 'es', 'son', 'se', 'su', 'con', 'por', 'para', 'al', 'lo',

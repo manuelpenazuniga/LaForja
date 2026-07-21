@@ -266,7 +266,7 @@ export function reRunCheck(_check: RecordedCheck, _newVersion: unknown): ReRunOu
  * 'failed' batch must never reach DEFENSE — it is indistinguishable from
  * "nothing was checked", and that is exactly the failure §5 forbids.
  *
- * Reference: doc §5 ("cada reparación reejecuta todo el historial"),
+ * Reference: doc §5 ("every repair re-runs the entire history"),
  * RECORDING_GATE.md question 3.
  */
 export function reRunHistory(_history: RecordedCheck[], _newVersion: unknown): HistoryRunBatch {

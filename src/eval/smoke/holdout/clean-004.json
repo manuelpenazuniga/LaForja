@@ -1,15 +1,15 @@
 {
   "_license": "CC-BY-4.0",
-  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
   "id": "clean-004",
   "author_labeled": true,
   "split": "holdout",
   "category": "clean",
   "discipline": "probability",
-  "stem": "Se extrae una carta al azar de una baraja inglesa de 52 cartas. ¿Cuál es la probabilidad de que la carta extraída sea un as o sea de trébol?",
+  "stem": "One card is drawn at random from a standard 52-card deck. What is the probability that the card drawn is an ace or a club?",
   "options": ["4/13", "17/52", "1/4", "1/13"],
   "correct_key": "A",
-  "author_rationale": "Hay 4 ases y 13 tréboles, pero el as de trébol se cuenta en ambos conjuntos: 4 + 13 - 1 = 16 casos favorables, luego P = 16/52 = 4/13. Cada distractor corresponde a un error real: 17/52 olvida el principio de inclusión-exclusión y suma 4 + 13, 1/4 = 13/52 cuenta solo los tréboles, y 1/13 = 4/52 cuenta solo los ases.",
+  "author_rationale": "There are 4 aces and 13 clubs, but the ace of clubs belongs to both sets: 4 + 13 - 1 = 16 favorable cases, so P = 16/52 = 4/13. Each distractor matches a real error: 17/52 forgets inclusion-exclusion and simply adds 4 + 13, 1/4 = 13/52 counts only the clubs, and 1/13 = 4/52 counts only the aces.",
   "intended_defect": null,
   "source": null
 }

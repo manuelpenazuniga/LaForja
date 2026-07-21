@@ -1,26 +1,26 @@
 {
   "_license": "CC-BY-4.0",
-  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
   "id": "factual-error-001",
   "author_labeled": true,
   "split": "dev",
   "category": "factual_error",
   "discipline": "probability",
-  "stem": "Se lanzan dos dados justos de seis caras. Se sabe que al menos uno de ellos muestra un 6. ¿Cuál es la probabilidad de que ambos muestren un 6?",
+  "stem": "Two fair six-sided dice are rolled. It is known that at least one of them shows a 6. What is the probability that both show a 6?",
   "options": ["1/6", "1/11", "1/36", "1/12"],
   "correct_key": "A",
-  "author_rationale": "El autor marcó 1/6 razonando que 'el otro dado debe salir 6, y eso ocurre con probabilidad 1/6'. Este razonamiento es INCORRECTO: ignora el condicionamiento sobre el evento 'al menos un 6', que no fija cuál de los dados es el 6.",
+  "author_rationale": "The author marked 1/6, reasoning that 'the other die must come up 6, and that happens with probability 1/6'. This reasoning is INCORRECT: it ignores the conditioning on the event 'at least one 6', which does not fix which of the dice is the 6.",
   "intended_defect": {
     "type": "factual_error",
-    "description": "La clave marcada (1/6) es incorrecta. El evento condicionante 'al menos un 6' tiene 11 resultados favorables de 36; de esos, solo 1 tiene ambos dados en 6.",
-    "expected_finding": "El verificador acotado debe calcular P(ambos 6 | al menos un 6) = |{(6,6)}| / |{al menos un 6}| = 1/11, contradiciendo la clave marcada.",
+    "description": "The marked key (1/6) is wrong. The conditioning event 'at least one 6' has 11 favorable outcomes out of 36; of those, only 1 has both dice showing 6.",
+    "expected_finding": "The bounded solver must compute P(both 6 | at least one 6) = |{(6,6)}| / |{at least one 6}| = 1/11, contradicting the marked key.",
     "true_answer": "1/11"
   },
   "source": {
     "source_id": "forja-corpus/conditional-probability-definition",
     "version_date": "2025-07-18",
     "license": "CC-BY-4.0",
-    "excerpt": "Para eventos A y B con P(B) > 0, la probabilidad condicional se define como P(A|B) = P(A ∩ B) / P(B). En un espacio muestral finito equiprobable esto equivale al cociente entre el número de resultados en A ∩ B y el número de resultados en B.",
-    "relevance": "Fija la definición que determina el denominador correcto (11 resultados del evento condicionante), que es exactamente el paso que el autor omitió."
+    "excerpt": "For events A and B with P(B) > 0, conditional probability is defined as P(A|B) = P(A ∩ B) / P(B). In a finite equiprobable sample space this equals the ratio of the number of outcomes in A ∩ B to the number of outcomes in B.",
+    "relevance": "Fixes the definition that determines the correct denominator (the 11 outcomes of the conditioning event), which is exactly the step the author skipped."
   }
 }

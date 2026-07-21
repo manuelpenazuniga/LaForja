@@ -1,19 +1,19 @@
 {
   "_license": "CC-BY-4.0",
-  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
   "id": "cue-leak-002",
   "author_labeled": true,
   "split": "holdout",
   "category": "cue_leak",
   "discipline": "probability",
-  "stem": "Si la probabilidad de un evento A es P(A) = 0,3, ¿cuál es la probabilidad del evento complementario?",
-  "options": ["0,7", "3", "-0,3", "1,3"],
+  "stem": "If the probability of an event A is P(A) = 0.3, what is the probability of the complementary event?",
+  "options": ["0.7", "3", "-0.3", "1.3"],
   "correct_key": "A",
-  "author_rationale": "P(A^c) = 1 - P(A) = 0,7. El autor no notó que las tres alternativas incorrectas quedan fuera del intervalo [0,1], de modo que se descartan sin usar el concepto de complemento.",
+  "author_rationale": "P(A^c) = 1 - P(A) = 0.7. The author did not notice that the three incorrect options all fall outside the interval [0,1], so they can be discarded without using the concept of a complement at all.",
   "intended_defect": {
     "type": "weak_distractor",
-    "description": "Los tres distractores (3, -0,3 y 1,3) son valores imposibles para una probabilidad. Un estudiante puede acertar por eliminación aritmética sin entender el complemento, así que el ítem no discrimina.",
-    "expected_finding": "El revisor de distractores debe reportar que ninguno de los tres distractores captura un error conceptual plausible sobre el complemento, ya que todos violan 0 ≤ P ≤ 1. Un distractor plausible sería 0,3 (confundir el evento con su complemento)."
+    "description": "The three distractors (3, -0.3 and 1.3) are impossible values for a probability. A student can land on the right answer by arithmetic elimination without understanding the complement, so the item does not discriminate.",
+    "expected_finding": "The distractor reviewer must report that none of the three distractors captures a plausible conceptual error about the complement, since all of them violate 0 ≤ P ≤ 1. A plausible distractor would be 0.3 (confusing the event with its complement)."
   },
   "source": null
 }

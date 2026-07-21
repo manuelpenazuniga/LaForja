@@ -1,24 +1,24 @@
 {
   "_license": "CC-BY-4.0",
-  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
   "id": "cue-leak-001",
   "author_labeled": true,
   "split": "dev",
   "category": "cue_leak",
   "discipline": "probability",
-  "stem": "En un experimento aleatorio con espacio muestral equiprobable, ¿qué expresa la probabilidad de un evento A?",
+  "stem": "In a random experiment with an equiprobable sample space, how is the probability of an event A defined in terms of favorable cases?",
   "options": [
-    "Es siempre 1/2",
-    "Es el cociente entre el número de casos favorables al evento A y el número total de casos posibles del espacio muestral equiprobable",
-    "Es un número negativo",
-    "Es el total de casos"
+    "It is always 1/2",
+    "It is the number of cases favorable to event A divided by the total number of cases of the equiprobable sample space of the random experiment",
+    "It is a negative number",
+    "It is the total of cases"
   ],
   "correct_key": "B",
-  "author_rationale": "La definición de Laplace. El autor no notó que la alternativa correcta es mucho más larga que las otras y repite casi literalmente el vocabulario del enunciado.",
+  "author_rationale": "The Laplace definition. The author did not notice that the correct option is far longer than the others and repeats the stem's vocabulary almost verbatim.",
   "intended_defect": {
     "type": "cue_leak",
-    "description": "Doble fuga determinista: (1) la alternativa correcta es notoriamente más larga que la media de las alternativas; (2) reutiliza los términos 'espacio muestral', 'equiprobable' y 'evento A' tomados del enunciado. Además, 'Es un número negativo' es un distractor implausible que nadie elegiría.",
-    "expected_finding": "item_probe debe levantar answer_length_flag (ratio por sobre LENGTH_HIGH) y lexical_overlap_flag (solapamiento enunciado↔respuesta por sobre OVERLAP_HIGH). El revisor de distractores debe marcar 'Es un número negativo' como distractor débil sin error conceptual plausible."
+    "description": "Double deterministic leak: (1) the correct option is conspicuously longer than the mean option length; (2) it reuses the terms 'random experiment', 'equiprobable sample space', 'event' and 'favorable cases' taken from the stem. On top of that, 'It is a negative number' is an implausible distractor that nobody would pick.",
+    "expected_finding": "item_probe must raise answer_length_flag (ratio above LENGTH_HIGH) and lexical_overlap_flag (stem↔answer overlap above OVERLAP_HIGH). The distractor reviewer must flag 'It is a negative number' as a weak distractor with no plausible conceptual error behind it."
   },
   "source": null
 }

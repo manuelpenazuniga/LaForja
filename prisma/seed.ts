@@ -6,10 +6,16 @@
  * or repair the flaw, and watches the passport grow. Authoring from scratch is
  * unlocked afterwards.
  *
- * THE DEMO ITEM (team-authored, CC-BY, zero DEMRE content):
+ * SCOPE: high-school / college MATHEMATICS, worldwide. The demo discipline is
+ * PROBABILITY ONLY — universal in any high-school or introductory college
+ * curriculum, so the slice reads the same to any audience. The mechanism itself
+ * is exam-agnostic (doc §12); it was designed against the constraints of a real
+ * high-stakes exam, but it is not tied to one.
+ *
+ * THE DEMO ITEM (team-authored original, CC-BY):
  * The classic two-children problem. The author marked 1/3, reasoning "at least one
- * is male". But the stem does not disambiguate, so a second reading ("a specific
- * child is male") yields 1/2. Two readings, two answers ⇒ a VALID ambiguity
+ * is a boy". But the stem does not disambiguate, so a second reading (a specific
+ * child is a boy) yields 1/2. Two readings, two answers ⇒ a VALID ambiguity
  * counterexample. This is what drives the whole slice on stage:
  *   v1 gauntlet → accepted counterexample → repair → v2 → history re-run →
  *   written defense → passport → PUBLISHED.
@@ -18,13 +24,17 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+// The ambiguity is load-bearing: "one of them is a boy" is genuinely open in
+// English between "at least one of the two is a boy" (⇒ 1/3) and a reference to
+// one particular child (⇒ 1/2). Do not "clarify" this stem — the defect IS the
+// demo. Any edit must preserve both readings and both answers.
 const DEMO_STEM =
-  'Una familia tiene dos hijos. Se sabe que uno de ellos es varón. ¿Cuál es la probabilidad de que ambos sean varones?';
+  'A family has two children. It is known that one of them is a boy. What is the probability that both children are boys?';
 
 const DEMO_OPTIONS = ['1/4', '1/3', '1/2', '2/3'];
 
 const DEMO_RATIONALE =
-  'Con la lectura "al menos uno es varón", el espacio se reduce a {VV, VM, MV} y solo VV es favorable, de modo que P = 1/3. Los distractores capturan errores reales: 1/4 ignora la información dada, 1/2 corresponde a la lectura en que se fija un hijo concreto, 2/3 invierte el cociente.';
+  'Under the reading "at least one of the two is a boy", the sample space reduces to {BB, BG, GB} and only BB is favourable, so P = 1/3. The distractors capture real errors: 1/4 ignores the given information, 1/2 corresponds to the reading in which one particular child is fixed, 2/3 inverts the ratio.';
 
 /** Random pseudonym (doc §6.4/§9): no PII, no school, no city. */
 function randomPseudonym(): string {
@@ -49,7 +59,7 @@ async function main(): Promise<void> {
     data: {
       sessionId: session.id,
       discipline: 'probability',
-      provenance: 'LA FORJA team-authored demo item. Original. Zero DEMRE content.',
+      provenance: 'LA FORJA team-authored demo item. Original work, CC-BY-4.0.',
       // Doc §9: this IS a team item, so it is the one case that carries CC-BY and
       // may legitimately be published. Visitor copies inherit neither (they keep
       // the schema defaults: unlicensed-ephemeral, not publication-eligible).

@@ -1,24 +1,24 @@
 {
   "_license": "CC-BY-4.0",
-  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
   "id": "cue-leak-003",
   "author_labeled": true,
   "split": "dev",
   "category": "cue_leak",
   "discipline": "probability",
-  "stem": "¿Qué condición deben cumplir dos eventos A y B para que se verifique la igualdad P(A y B) = P(A) · P(B)?",
+  "stem": "Two events A and B satisfy the equality P(A and B) = P(A) · P(B). What condition does that equality express about the probability of event B when event A occurs?",
   "options": [
-    "Que sean mutuamente excluyentes",
-    "Que los eventos A y B sean independientes, es decir, que la ocurrencia de uno no modifique la probabilidad de ocurrencia del otro",
-    "Que sumen 1",
-    "Que sean iguales"
+    "That they are mutually exclusive",
+    "That the two events are independent, so that the probability of event B does not change when event A occurs",
+    "That they add up to 1",
+    "That they are equal"
   ],
   "correct_key": "B",
-  "author_rationale": "La igualdad P(A ∩ B) = P(A)·P(B) es precisamente la definición de independencia. El autor no notó que la alternativa correcta es mucho más larga que las demás y que reutiliza los términos 'eventos A y B' del enunciado.",
+  "author_rationale": "The equality P(A ∩ B) = P(A)·P(B) is precisely the definition of independence. The author did not notice that the correct option is far longer than the rest and that it reuses the stem's wording about events A and B and the probability of B when A occurs.",
   "intended_defect": {
     "type": "cue_leak",
-    "description": "Doble fuga determinista: la alternativa correcta duplica en extensión a la media de las alternativas y repite el vocabulario del enunciado ('eventos A y B', 'probabilidad'). Además 'Que sumen 1' y 'Que sean iguales' son distractores vagos que no corresponden a un error conceptual identificable.",
-    "expected_finding": "item_probe debe levantar answer_length_flag (ratio sobre LENGTH_HIGH) y lexical_overlap_flag (solapamiento enunciado↔respuesta sobre OVERLAP_HIGH). El revisor de distractores debe señalar que solo 'mutuamente excluyentes' captura un error conceptual real (confundir independencia con exclusión mutua); los otros dos son relleno."
+    "description": "Double deterministic leak: the correct option is more than twice the mean option length and repeats the stem's vocabulary ('two events', 'probability', 'event B', 'when event A occurs'). On top of that, 'That they add up to 1' and 'That they are equal' are vague distractors that do not correspond to any identifiable conceptual error.",
+    "expected_finding": "item_probe must raise answer_length_flag (ratio above LENGTH_HIGH) and lexical_overlap_flag (stem↔answer overlap above OVERLAP_HIGH). The distractor reviewer must point out that only 'mutually exclusive' captures a real conceptual error (confusing independence with mutual exclusivity); the other two are filler."
   },
   "source": null
 }

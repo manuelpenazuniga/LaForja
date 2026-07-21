@@ -1,26 +1,26 @@
 {
   "_license": "CC-BY-4.0",
-  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item. Zero DEMRE content.",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
   "id": "factual-error-002",
   "author_labeled": true,
   "split": "holdout",
   "category": "factual_error",
   "discipline": "probability",
-  "stem": "Una bolsa contiene 4 bolas blancas y 6 bolas negras. Se extraen dos bolas al azar, una tras otra y sin reposición. ¿Cuál es la probabilidad de que ambas sean blancas?",
+  "stem": "A bag contains 4 white balls and 6 black balls. Two balls are drawn at random, one after the other and without replacement. What is the probability that both are white?",
   "options": ["4/25", "2/15", "2/5", "1/5"],
   "correct_key": "A",
-  "author_rationale": "El autor marcó 4/25 calculando (4/10)·(4/10). Ese cálculo corresponde a extracción CON reposición y contradice el propio enunciado, que dice explícitamente 'sin reposición'.",
+  "author_rationale": "The author marked 4/25 by computing (4/10)·(4/10). That computation corresponds to drawing WITH replacement and contradicts the stem itself, which explicitly says 'without replacement'.",
   "intended_defect": {
     "type": "factual_error",
-    "description": "La clave marcada (4/25) aplica reposición pese a que el enunciado la excluye. Sin reposición, la segunda extracción ocurre sobre 9 bolas de las cuales 3 son blancas.",
-    "expected_finding": "El verificador acotado debe calcular (4/10)·(3/9) = 12/90 = 2/15, contradiciendo la clave marcada. Nótese que el enunciado NO es ambiguo: el error es puramente de cálculo.",
+    "description": "The marked key (4/25) applies replacement even though the stem rules it out. Without replacement, the second draw happens over 9 balls, of which 3 are white.",
+    "expected_finding": "The bounded solver must compute (4/10)·(3/9) = 12/90 = 2/15, contradicting the marked key. Note that the stem is NOT ambiguous: the error is purely one of calculation.",
     "true_answer": "2/15"
   },
   "source": {
     "source_id": "forja-corpus/sampling-without-replacement",
     "version_date": "2025-07-18",
     "license": "CC-BY-4.0",
-    "excerpt": "En un muestreo sin reposición, la composición del conjunto cambia entre extracciones: la probabilidad de la segunda extracción se calcula sobre el conjunto reducido, de modo que P(A₁ ∩ A₂) = P(A₁) · P(A₂ | A₁).",
-    "relevance": "Establece que el segundo factor debe evaluarse sobre el conjunto reducido (3 blancas de 9), que es exactamente el paso que el autor sustituyó por reposición."
+    "excerpt": "In sampling without replacement, the composition of the set changes between draws: the probability of the second draw is computed over the reduced set, so that P(A₁ ∩ A₂) = P(A₁) · P(A₂ | A₁).",
+    "relevance": "Establishes that the second factor must be evaluated over the reduced set (3 white out of 9), which is exactly the step the author replaced with replacement."
   }
 }

@@ -7,6 +7,14 @@ are answered with **links and paths, never with prose**. An empty slot is a bloc
 not a caveat to narrate around. There is no partial pass: six filled slots, or we go
 back to building.
 
+**Positioning for every line of narration:** LA FORJA is an adversarial learning studio
+for **high-school and college mathematics**, exam-agnostic and not tied to any country,
+exam or examining body. The demo discipline is **probability** because it is universal at
+that level. The domain expertise behind the design is real and may be stated — as
+*expertise*, never as *scope*: "designed against the constraints of a real high-stakes
+exam, built to be exam-agnostic." Never name a country or a single test as the product's
+market, and never say anything of the form "our first proving ground is X."
+
 ---
 
 ## The six questions
@@ -98,6 +106,14 @@ post-production fix.
 - ☐ Nothing forbidden is said: never "gold set" (it is a **labeled smoke set**), never
   "independent adjudicator" (it is a **separate adjudication step**), and never any
   variant of "the model does not explain".
+- ☐ **The positioning is global**: high-school / college mathematics, exam-agnostic. No
+  country, exam or examining body is named as the product's scope, on screen or in the
+  narration. If the design origin is mentioned at all, it is framed as domain expertise —
+  "designed against the constraints of a real high-stakes exam, built to be
+  exam-agnostic" — and never as the market.
+- ☐ **Every item shown is a team-authored original under CC-BY.** No third-party exam
+  content of any kind on screen — no official item, passage, figure or answer key, and no
+  official taxonomy label.
 - ☐ The AI's role is stated in the authorized form: the AI does not generate the
   initial item and does not hand over a canonical solution; it returns challenges and
   evidence; the repair and the defense belong to the student.
