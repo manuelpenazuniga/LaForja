@@ -3,49 +3,55 @@
 
    OWNER: Claude (presentation only).
 
-   Design language: "warm workshop". Warm paper surfaces, deep charcoal bands,
-   one ember accent, and three fixed class colours that never change meaning:
-     deterministic  = steel blue
+   Design language: "collegiate". Cool slate paper, deep navy bands, an indigo
+   brand accent with collegiate gold highlights, and three fixed class colours
+   that never change meaning:
+     deterministic  = teal
      counterexample = stamp crimson
-     semantic       = violet, italic, dashed (always rendered as provisional)
+     semantic       = fuchsia, italic, dashed (always rendered as provisional)
    The diagonal hatch texture always means the same thing: not built / next.
    ========================================================================== */
 
 :root {
   /* surfaces */
-  --paper: #faf6f1;
+  --paper: #f6f7fb;
   --card: #ffffff;
-  --field: #f3ecE3;
-  --coal: #1d1610;
-  --coal-2: #292018;
-  --coal-3: #372b1f;
+  --field: #eef1f8;
+  --night: #101430;
+  --night-2: #191f42;
+  --night-3: #242c5c;
 
   /* ink on paper */
-  --ink: #241c14;
-  --ink-soft: #675c50;
-  --line: rgba(36, 28, 20, 0.12);
-  --line-strong: rgba(36, 28, 20, 0.3);
+  --ink: #171c33;
+  --ink-soft: #575e7c;
+  --line: rgba(23, 28, 51, 0.12);
+  --line-strong: rgba(23, 28, 51, 0.3);
 
-  /* ink on coal */
-  --smoke: #f4ecdf;
-  --smoke-soft: #bcad9b;
-  --line-dark: rgba(244, 236, 223, 0.14);
+  /* ink on night */
+  --smoke: #eef0fa;
+  --smoke-soft: #a9afd4;
+  --line-dark: rgba(238, 240, 250, 0.14);
 
-  /* ember — the one accent */
-  --ember: #e85d04;
-  --ember-strong: #c2410c;
-  --ember-hot: #ff8a3d;
-  --ember-deep: #9a3412;
-  --ember-soft: rgba(232, 93, 4, 0.1);
-  --ember-line: rgba(232, 93, 4, 0.35);
+  /* indigo — the brand accent */
+  --brand: #4f46e5;
+  --brand-strong: #4338ca;
+  --brand-hot: #818cf8;
+  --brand-deep: #3730a3;
+  --brand-soft: rgba(79, 70, 229, 0.09);
+  --brand-line: rgba(79, 70, 229, 0.35);
+
+  /* collegiate gold — highlights only, never a control colour */
+  --gold: #b45309;
+  --gold-hot: #fbbf24;
+  --gold-soft: rgba(217, 119, 6, 0.14);
 
   /* check-class colours (fixed meanings) */
-  --steel: #1d4ed8;
-  --steel-soft: rgba(29, 78, 216, 0.08);
+  --det: #0f766e;
+  --det-soft: rgba(15, 118, 110, 0.08);
   --stamp: #b42318;
   --stamp-soft: rgba(180, 35, 24, 0.07);
-  --violet: #6d28d9;
-  --violet-soft: rgba(109, 40, 217, 0.07);
+  --sem: #a21caf;
+  --sem-soft: rgba(162, 28, 175, 0.07);
   --ok: #15803d;
   --ok-soft: rgba(21, 128, 61, 0.1);
 
@@ -60,14 +66,14 @@
   --r-md: 14px;
   --r-sm: 10px;
   --r-xs: 7px;
-  --shadow-1: 0 1px 2px rgba(56, 36, 14, 0.05), 0 6px 20px rgba(56, 36, 14, 0.06);
-  --shadow-2: 0 2px 8px rgba(56, 36, 14, 0.08), 0 20px 48px rgba(56, 36, 14, 0.12);
+  --shadow-1: 0 1px 2px rgba(23, 28, 51, 0.05), 0 6px 20px rgba(23, 28, 51, 0.06);
+  --shadow-2: 0 2px 8px rgba(23, 28, 51, 0.08), 0 20px 48px rgba(23, 28, 51, 0.12);
 
   /* the "next / not built" hatch */
   --hatch: repeating-linear-gradient(
     45deg,
     transparent 0 5px,
-    rgba(36, 28, 20, 0.07) 5px 6px,
+    rgba(23, 28, 51, 0.07) 5px 6px,
     transparent 6px 11px
   );
 
@@ -133,7 +139,7 @@ input:focus-visible,
 textarea:focus-visible,
 a:focus-visible,
 [tabindex]:focus-visible {
-  outline: 3px solid var(--ember);
+  outline: 3px solid var(--brand);
   outline-offset: 2px;
   border-radius: var(--r-xs);
 }
@@ -144,7 +150,7 @@ button:disabled,
 }
 
 ::selection {
-  background: var(--ember);
+  background: var(--brand);
   color: #fff;
 }
 
@@ -201,18 +207,18 @@ ol {
 
 .btn--forge {
   border-color: transparent;
-  background: linear-gradient(180deg, #d9480f, var(--ember-strong));
+  background: linear-gradient(180deg, #5b54f0, var(--brand-strong));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 6px 18px rgba(194, 65, 12, 0.32);
+    0 6px 18px rgba(67, 56, 202, 0.32);
   color: #fff;
 }
 
 .btn--forge:hover:not(:disabled) {
-  background: linear-gradient(180deg, #e0530f, #cc4a10);
+  background: linear-gradient(180deg, #6660f2, #4c44d8);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 8px 22px rgba(194, 65, 12, 0.4);
+    0 8px 22px rgba(67, 56, 202, 0.4);
 }
 
 .btn--lg {
@@ -330,16 +336,16 @@ ol {
   transform: translateY(1px) scale(0.99);
 }
 
-.lp-btn--ember {
-  background: linear-gradient(180deg, #d9480f, var(--ember-strong));
+.lp-btn--brand {
+  background: linear-gradient(180deg, #5b54f0, var(--brand-strong));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 6px 18px rgba(194, 65, 12, 0.32);
+    0 6px 18px rgba(67, 56, 202, 0.32);
   color: #fff;
 }
 
-.lp-btn--ember:hover {
-  background: linear-gradient(180deg, #e0530f, #cc4a10);
+.lp-btn--brand:hover {
+  background: linear-gradient(180deg, #6660f2, #4c44d8);
 }
 
 .lp-btn--ghost {
@@ -364,8 +370,8 @@ ol {
   position: relative;
   overflow: clip;
   background:
-    radial-gradient(52rem 30rem at 50% 118%, rgba(232, 93, 4, 0.28), transparent 60%),
-    var(--coal);
+    radial-gradient(52rem 30rem at 50% 118%, rgba(79, 70, 229, 0.4), transparent 60%),
+    var(--night);
   padding: clamp(64px, 9vw, 120px) clamp(16px, 4vw, 40px) clamp(48px, 6vw, 88px);
   color: var(--smoke);
   text-align: center;
@@ -375,7 +381,7 @@ ol {
   position: absolute;
   inset: auto 0 -40%;
   height: 70%;
-  background: radial-gradient(50% 60% at 50% 100%, rgba(255, 138, 61, 0.14), transparent 70%);
+  background: radial-gradient(50% 60% at 50% 100%, rgba(129, 140, 248, 0.16), transparent 70%);
   pointer-events: none;
 }
 
@@ -399,7 +405,7 @@ ol {
 }
 
 .lp-hero__title em {
-  background: linear-gradient(92deg, var(--ember-hot), var(--ember) 70%);
+  background: linear-gradient(92deg, var(--gold-hot), #f59e0b 70%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -442,7 +448,7 @@ ol {
   margin: clamp(48px, 6vw, 72px) auto 0;
   border: 1px solid var(--line-dark);
   border-radius: var(--r-lg);
-  background: color-mix(in srgb, var(--coal-2) 86%, transparent);
+  background: color-mix(in srgb, var(--night-2) 86%, transparent);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.4);
   padding: clamp(24px, 4vw, 48px);
   animation: lp-rise 600ms 420ms ease-out both;
@@ -466,8 +472,8 @@ ol {
 
 .lp-fork__mark {
   background: transparent;
-  border-bottom: 3px solid var(--ember);
-  color: var(--ember-hot);
+  border-bottom: 3px solid var(--gold-hot);
+  color: var(--gold-hot);
   font-style: italic;
 }
 
@@ -483,23 +489,23 @@ ol {
   grid-column: 2 / 4;
   grid-row: 1;
   justify-self: center;
-  border-left: 1.5px solid var(--ember-line);
+  border-left: 1.5px solid var(--brand-line);
 }
 
 .lp-fork__arm {
   grid-row: 2;
-  border-top: 1.5px solid var(--ember-line);
+  border-top: 1.5px solid var(--brand-line);
 }
 
 .lp-fork__arm--l {
   grid-column: 2;
-  border-left: 1.5px solid var(--ember-line);
+  border-left: 1.5px solid var(--brand-line);
   border-top-left-radius: 8px;
 }
 
 .lp-fork__arm--r {
   grid-column: 3;
-  border-right: 1.5px solid var(--ember-line);
+  border-right: 1.5px solid var(--brand-line);
   border-top-right-radius: 8px;
 }
 
@@ -535,7 +541,7 @@ ol {
 .lp-fork__answer {
   display: block;
   margin-top: var(--s3);
-  background: linear-gradient(180deg, var(--ember-hot), var(--ember));
+  background: linear-gradient(180deg, #c7d2fe, var(--brand-hot));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -550,9 +556,9 @@ ol {
   place-items: center;
   width: 52px;
   height: 52px;
-  border: 1.5px solid var(--ember-line);
+  border: 1.5px solid var(--brand-line);
   border-radius: 50%;
-  color: var(--ember-hot);
+  color: var(--brand-hot);
   font-size: 28px;
   font-weight: 700;
 }
@@ -577,7 +583,7 @@ ol {
 }
 
 .lp-section--dark {
-  background: var(--coal);
+  background: var(--night);
   color: var(--smoke);
 }
 
@@ -642,7 +648,7 @@ ol {
 }
 
 .lp-station__num {
-  color: var(--ember);
+  color: var(--brand);
   font-family: var(--display);
   font-size: 26px;
   font-weight: 800;
@@ -680,8 +686,8 @@ ol {
 }
 
 .lp-chip--gated {
-  background: var(--steel-soft);
-  color: var(--steel);
+  background: var(--brand-soft);
+  color: var(--brand-deep);
 }
 
 .lp-station__title {
@@ -702,14 +708,14 @@ ol {
 .lp-station__note {
   margin-top: auto;
   padding-top: var(--s4);
-  color: var(--ember-deep);
+  color: var(--brand-deep);
   font-family: var(--mono);
   font-size: 12px;
 }
 
 .lp-role {
   margin-top: var(--s8);
-  border-left: 4px solid var(--ember);
+  border-left: 4px solid var(--gold-hot);
   padding-left: var(--s5);
   max-width: 62ch;
   font-family: var(--serif);
@@ -730,7 +736,7 @@ ol {
 .lp-class {
   border: 1px solid var(--line-dark);
   border-radius: var(--r-lg);
-  background: var(--coal-2);
+  background: var(--night-2);
   padding: var(--s5);
 }
 
@@ -760,8 +766,8 @@ ol {
 }
 
 .lp-class[data-class='deterministic'] .lp-class__tag {
-  background: rgba(147, 180, 255, 0.14);
-  color: #a7c2ff;
+  background: rgba(94, 234, 212, 0.14);
+  color: #5eead4;
 }
 
 .lp-class[data-class='counterexample'] .lp-class__tag {
@@ -770,8 +776,8 @@ ol {
 }
 
 .lp-class[data-class='semantic'] .lp-class__tag {
-  background: rgba(196, 181, 253, 0.14);
-  color: #c4b5fd;
+  background: rgba(240, 171, 252, 0.14);
+  color: #f0abfc;
   font-style: italic;
   text-decoration: underline dashed 1px;
   text-underline-offset: 3px;
@@ -878,8 +884,8 @@ ol {
   width: 44px;
   height: 44px;
   border-radius: var(--r-md);
-  background: var(--ember-soft);
-  color: var(--ember-deep);
+  background: var(--gold-soft);
+  color: var(--gold);
 }
 
 .lp-principle__icon svg {
@@ -905,8 +911,8 @@ ol {
 
 .lp-final {
   background:
-    radial-gradient(46rem 26rem at 50% 130%, rgba(232, 93, 4, 0.3), transparent 60%),
-    var(--coal);
+    radial-gradient(46rem 26rem at 50% 130%, rgba(79, 70, 229, 0.42), transparent 60%),
+    var(--night);
   padding: clamp(72px, 9vw, 128px) clamp(16px, 4vw, 40px);
   color: var(--smoke);
   text-align: center;
@@ -934,7 +940,7 @@ ol {
   gap: var(--s3) var(--s6);
   justify-content: center;
   border-top: 1px solid var(--line-dark);
-  background: var(--coal);
+  background: var(--night);
   padding: var(--s5) clamp(16px, 4vw, 40px) var(--s7);
   color: var(--smoke-soft);
   font-family: var(--mono);
@@ -959,19 +965,20 @@ ol {
 .shell {
   width: min(calc(100% - 32px), 1160px);
   margin: 0 auto;
-  padding: var(--s6) 0 var(--s9);
+  /* Extra bottom room so the fixed next-move bar never covers the colophon. */
+  padding: var(--s6) 0 176px;
 }
 
 /* masthead */
 
 .masthead {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
   gap: var(--s6);
   align-items: start;
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  background: var(--coal);
+  background: var(--night);
   box-shadow: var(--shadow-2);
   padding: var(--s6);
   color: var(--smoke);
@@ -1005,29 +1012,25 @@ ol {
   color: var(--smoke-soft);
 }
 
+/* The run record is bookkeeping, not a headline: quiet chips, not a table. */
 .masthead__meta {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--s2);
-  border: 1px solid var(--line-dark);
-  border-radius: var(--r-md);
-  background: rgba(0, 0, 0, 0.25);
-  padding: var(--s4);
+  align-content: flex-start;
+  justify-content: flex-end;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 10.5px;
   font-variant-numeric: tabular-nums lining-nums;
 }
 
 .meta-row {
-  display: grid;
-  grid-template-columns: 132px minmax(0, 1fr);
-  gap: var(--s3);
-  border-bottom: 1px solid var(--line-dark);
-  padding-bottom: var(--s2);
-}
-
-.meta-row:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
+  display: inline-flex;
+  gap: var(--s2);
+  align-items: baseline;
+  border: 1px solid var(--line-dark);
+  border-radius: 999px;
+  padding: 3px 10px;
 }
 
 .meta-row span {
@@ -1072,13 +1075,13 @@ ol {
 }
 
 .rail__node[data-phase='past'] {
-  border-color: var(--ember-line);
-  background: var(--ember-soft);
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
 }
 
 .rail__node[data-phase='current'] {
-  border: 2px solid var(--ember);
-  box-shadow: 0 0 0 4px var(--ember-soft), var(--shadow-1);
+  border: 2px solid var(--brand);
+  box-shadow: 0 0 0 4px var(--brand-soft), var(--shadow-1);
   padding: calc(var(--s3) - 1px) calc(var(--s4) - 1px);
 }
 
@@ -1089,7 +1092,7 @@ ol {
 .rail__notch {
   display: block;
   height: 18px;
-  color: var(--ember);
+  color: var(--gold);
   font-family: var(--mono);
   font-size: 13px;
 }
@@ -1172,7 +1175,7 @@ ol {
 }
 
 .trail em {
-  color: var(--ember-deep);
+  color: var(--brand-deep);
   font-style: normal;
 }
 
@@ -1184,7 +1187,7 @@ ol {
   gap: var(--s4);
   margin-top: var(--s5);
   border: 1px solid var(--line-strong);
-  border-left: 4px solid var(--ember);
+  border-left: 4px solid var(--brand);
   border-radius: var(--r-md);
   background: var(--card);
   padding: var(--s3) var(--s4);
@@ -1265,6 +1268,49 @@ ol {
   box-shadow: var(--shadow-1);
   padding: var(--s6);
   scroll-margin-top: var(--s5);
+  transition: opacity 250ms ease, border-color 250ms ease, box-shadow 250ms ease;
+}
+
+/* Step guidance: the sheet always shows where you are and what is done. */
+.panel[data-step='now'] {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px var(--brand-soft), var(--shadow-1);
+}
+
+.panel[data-step='later'] {
+  opacity: 0.66;
+}
+
+.panel[data-step='later']:hover,
+.panel[data-step='later']:focus-within {
+  opacity: 1;
+}
+
+.panel__phase {
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.panel__phase[data-phase='now'] {
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+}
+
+.panel__phase[data-phase='done'] {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.panel__phase[data-phase='later'] {
+  border: 1px dashed var(--line-strong);
+  background: var(--hatch);
+  color: var(--ink-soft);
 }
 
 .panel__head {
@@ -1280,8 +1326,8 @@ ol {
   width: 44px;
   height: 44px;
   border-radius: var(--r-sm);
-  background: var(--ember-soft);
-  color: var(--ember-deep);
+  background: var(--brand-soft);
+  color: var(--brand-deep);
   font-family: var(--display);
   font-size: 16px;
   font-weight: 800;
@@ -1306,10 +1352,10 @@ ol {
 }
 
 .station {
-  border: 1px solid var(--ember-line);
+  border: 1px solid var(--brand-line);
   border-radius: 999px;
   padding: 2px 10px;
-  color: var(--ember-deep);
+  color: var(--brand-deep);
   font-family: var(--mono);
   font-size: 10.5px;
   font-weight: 700;
@@ -1327,7 +1373,7 @@ ol {
 }
 
 .guarantee {
-  border-left: 4px solid var(--ember);
+  border-left: 4px solid var(--gold-hot);
   padding-left: var(--s4);
   color: var(--ink);
   font-family: var(--serif);
@@ -1396,7 +1442,7 @@ ol {
 
 .textarea:focus,
 .input:focus {
-  border-color: var(--ember);
+  border-color: var(--brand);
   background: var(--card);
 }
 
@@ -1469,7 +1515,7 @@ ol {
 
 .option input[type='radio']:checked {
   background:
-    radial-gradient(circle at center, var(--ember) 0 7px, transparent 8px) no-repeat;
+    radial-gradient(circle at center, var(--brand) 0 7px, transparent 8px) no-repeat;
 }
 
 .option__key {
@@ -1540,9 +1586,9 @@ ol {
 .tag--deterministic,
 .class-mark--deterministic {
   border: 1px solid transparent;
-  background: var(--steel-soft);
+  background: var(--det-soft);
   padding: 2px 10px;
-  color: var(--steel);
+  color: var(--det);
   font-style: normal;
 }
 
@@ -1558,9 +1604,9 @@ ol {
 .class-mark--semantic,
 .verdict--unverified {
   border: 1px solid transparent;
-  background: var(--violet-soft);
+  background: var(--sem-soft);
   padding: 2px 10px;
-  color: var(--violet);
+  color: var(--sem);
   font-style: italic;
   text-decoration: underline dashed 1px;
   text-underline-offset: 3px;
@@ -1594,8 +1640,8 @@ ol {
 }
 
 .lane[data-status='running'] {
-  border-color: var(--ember-line);
-  box-shadow: 0 0 0 3px var(--ember-soft);
+  border-color: var(--brand-line);
+  box-shadow: 0 0 0 3px var(--brand-soft);
 }
 
 .lane[data-status='done'],
@@ -1657,11 +1703,11 @@ ol {
   font-size: 12px;
 }
 
-.lane__contract-name {
+.lane__mission {
   margin-top: var(--s3);
-  overflow-wrap: anywhere;
-  color: var(--ink-soft);
-  font-size: 10.5px;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -1728,7 +1774,7 @@ ol {
   border: 0;
   background: transparent;
   padding: var(--s2) 0;
-  color: var(--ember-deep);
+  color: var(--brand-deep);
   font-size: 11.5px;
   font-weight: 700;
   text-decoration: underline;
@@ -1782,7 +1828,7 @@ ol {
 }
 
 .contract-block--hypothesis {
-  color: var(--violet);
+  color: var(--sem);
   font-style: italic;
   text-decoration: underline dashed 1px;
   text-underline-offset: 3px;
@@ -1798,17 +1844,16 @@ ol {
 }
 
 .metric--flag {
-  border-left: 3px solid var(--ember);
+  border-left: 3px solid var(--brand);
   padding-left: var(--s2);
   color: var(--ink);
 }
 
 .pending-surface {
-  min-height: 112px;
   border: 1.5px dashed var(--line-strong);
   border-radius: var(--r-md);
   background: var(--hatch);
-  padding: var(--s5);
+  padding: var(--s4);
   pointer-events: none;
 }
 
@@ -1948,8 +1993,8 @@ ol {
 }
 
 .sample-space span[data-favourable='true'] {
-  border: 2px solid var(--ember);
-  background: var(--ember-soft);
+  border: 2px solid var(--brand);
+  background: var(--brand-soft);
   font-weight: 700;
 }
 
@@ -1968,7 +2013,7 @@ ol {
 }
 
 .collision__answer b {
-  background: linear-gradient(180deg, var(--ember), var(--ember-deep));
+  background: linear-gradient(180deg, var(--brand-hot), var(--brand-deep));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -2039,7 +2084,7 @@ ol {
 
 .diff__add {
   color: var(--ink);
-  text-decoration: underline solid 2px var(--ember);
+  text-decoration: underline solid 2px var(--brand);
   text-underline-offset: 3px;
 }
 
@@ -2067,7 +2112,7 @@ ol {
 }
 
 .class-group[data-class='deterministic'] {
-  border-left: 4px solid var(--steel);
+  border-left: 4px solid var(--det);
 }
 
 .class-group[data-class='counterexample'] {
@@ -2075,7 +2120,7 @@ ol {
 }
 
 .class-group[data-class='semantic'] {
-  border-left: 4px solid var(--violet);
+  border-left: 4px solid var(--sem);
 }
 
 .class-group__promise {
@@ -2088,7 +2133,7 @@ ol {
 .class-group[data-class='semantic'] .class-group__promise,
 .class-group[data-class='semantic'] .rerun,
 .passport-history__class[data-class='semantic'] {
-  color: var(--violet);
+  color: var(--sem);
   font-style: italic;
   text-decoration: underline dashed 1px;
   text-underline-offset: 3px;
@@ -2157,11 +2202,11 @@ ol {
   gap: var(--s4);
   align-items: center;
   margin-bottom: var(--s5);
-  border: 1.5px solid var(--violet);
+  border: 1.5px solid var(--sem);
   border-radius: var(--r-md);
-  background: var(--violet-soft);
+  background: var(--sem-soft);
   padding: var(--s3) var(--s4);
-  color: var(--violet);
+  color: var(--sem);
   font-size: 11.5px;
 }
 
@@ -2179,7 +2224,7 @@ ol {
 
 .rubric__title,
 .scale {
-  color: var(--violet);
+  color: var(--sem);
   font-style: italic;
   text-decoration: underline dashed 1px;
   text-underline-offset: 3px;
@@ -2417,7 +2462,7 @@ ol {
 }
 
 .ob-eyebrow {
-  color: var(--ember-deep);
+  color: var(--brand-deep);
   font-family: var(--mono);
   font-size: 12px;
   font-weight: 700;
@@ -2462,8 +2507,8 @@ ol {
   width: 40px;
   height: 40px;
   border-radius: var(--r-sm);
-  background: var(--ember-soft);
-  color: var(--ember-deep);
+  background: var(--brand-soft);
+  color: var(--brand-deep);
   font-family: var(--display);
   font-size: 17px;
   font-weight: 800;
@@ -2499,6 +2544,58 @@ ol {
   gap: var(--s3) var(--s4);
   align-items: center;
   margin-top: var(--s6);
+}
+
+/* ------------------------------------------------------- next-move bar */
+
+/* One fixed bar that always answers: where am I, what do I do next. */
+.next-bar {
+  position: fixed;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: 50%;
+  z-index: 45;
+  display: flex;
+  gap: var(--s3) var(--s4);
+  align-items: center;
+  width: min(calc(100% - 24px), 760px);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-2);
+  padding: var(--s3) var(--s3) var(--s3) var(--s5);
+  transform: translateX(-50%);
+}
+
+.next-bar__step {
+  color: var(--brand-deep);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.next-bar__text {
+  flex: 1;
+  min-width: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.next-bar .btn {
+  min-width: 0;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.next-bar__note {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  white-space: nowrap;
 }
 
 /* ---------------------------------------------------------------- sonner */
@@ -2765,6 +2862,19 @@ ol {
     flex-direction: column;
     align-items: center;
     gap: var(--s2);
+  }
+
+  .masthead__meta {
+    justify-content: flex-start;
+  }
+
+  .next-bar {
+    flex-wrap: wrap;
+    padding: var(--s3) var(--s4);
+  }
+
+  .next-bar__text {
+    flex-basis: 100%;
   }
 }
 

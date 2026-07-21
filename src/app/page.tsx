@@ -136,7 +136,7 @@ export default function LandingPage() {
           <a href="#promises">The promises</a>
           <a href="#today">What runs today</a>
         </nav>
-        <Link className="lp-btn lp-btn--ember lp-nav__cta" href="/studio">
+        <Link className="lp-btn lp-btn--brand lp-nav__cta" href="/studio">
           Enter the studio
         </Link>
       </header>
@@ -159,7 +159,7 @@ export default function LandingPage() {
           then publish it with a passport that records the whole fight.
         </p>
         <div className="lp-hero__actions">
-          <Link className="lp-btn lp-btn--ember lp-btn--lg" href="/studio">
+          <Link className="lp-btn lp-btn--brand lp-btn--lg" href="/studio">
             Enter the studio
           </Link>
           <a className="lp-btn lp-btn--ghost lp-btn--lg" href="#how">
@@ -369,7 +369,7 @@ export default function LandingPage() {
           Onboarding is repair-first: your first move is loading a defective item
           and watching it fracture — not staring at an empty form.
         </p>
-        <Link className="lp-btn lp-btn--ember lp-btn--lg" href="/studio">
+        <Link className="lp-btn lp-btn--brand lp-btn--lg" href="/studio">
           Enter the studio
         </Link>
       </section>
