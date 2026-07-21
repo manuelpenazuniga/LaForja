@@ -46,8 +46,12 @@ import {
 import { fromJson, prisma, toJson } from '@/db/client';
 import { loadModelConfig } from '@/config/models';
 import { reduce } from '@/core/stateMachine';
+import { RecordedCheckRowSchema } from '@/core/checks';
 import {
+  DEFAULT_GAUNTLET_DEPS,
+  REVIEWER_TIMEOUT_MS,
   runGauntlet,
+  toDelimitedItem,
   type OrchestrationResult,
   type RawItem,
   type ReviewerFailureKind,
@@ -58,6 +62,15 @@ import {
   type AdjudicatedCheck,
   type AdjudicationResult,
 } from '@/reviewers/adjudication';
+import { AMBIGUITY_PROMPT_VERSION, AMBIGUITY_SYSTEM } from '@/reviewers/ambiguity';
+import { DISCIPLINE_PROMPT_VERSION, DISCIPLINE_SYSTEM } from '@/reviewers/discipline';
+import { DISTRACTOR_PROMPT_VERSION, DISTRACTOR_SYSTEM } from '@/reviewers/distractors';
+import {
+  AmbiguitySchema,
+  DisciplineSchema,
+  DistractorMapSchema,
+} from '@/reviewers/schemas';
+import { callModel, type ModelCallArgs, type ModelCallResult } from '@/openai/client';
 import type { EvalConfig } from '@/eval/types';
 import type {
   CheckClass,
@@ -333,66 +346,270 @@ export interface GauntletRouteDeps {
   completeRun(record: RunCompletionRecord): Promise<void>;
 }
 
+const delimitedItemByRun = new WeakMap<OrchestrationResult, string>();
+
 /**
- * TODO(codex): wrap `runGauntlet` so each reviewer streams.
- *
- * `runGauntlet` awaits every reviewer before resolving. Pass it a `GauntletDeps`
- * bundle whose reviewer functions are the REAL ones wrapped in a `.then`/`.catch`
- * that calls `args.onReviewerSettled` immediately, so a fast reviewer reaches the
- * client while a slow one is still in flight. Emit the deterministic item_probe
- * the same way. Do NOT collect the outcomes and replay them afterwards.
+ * Run the existing concurrent orchestrator with call wrappers that report each
+ * specialist and the deterministic probe from their own settlement path. Model
+ * wrappers retain the exact call result so streaming and persistence share one
+ * invocation rather than re-calling a reviewer for telemetry.
  */
-function streamingRunGauntlet(_args: StreamingGauntletArgs): Promise<OrchestrationResult> {
-  void runGauntlet;
-  throw new Error('TODO(codex): stream each reviewer outcome as it settles (doc §7.1)');
+async function streamingRunGauntlet(args: StreamingGauntletArgs): Promise<OrchestrationResult> {
+  const delimitedItem = toDelimitedItem(args.item);
+
+  const modelReviewer = <T>(
+    reviewerType: 'ambiguity' | 'discipline' | 'distractor',
+    system: string,
+    promptVersion: string,
+    schema: z.ZodType<T>,
+  ) => async (itemText: string, model: string): Promise<T> => {
+    const startedAt = Date.now();
+    try {
+      const result = await callModel<T>({
+        model,
+        system,
+        delimitedItem: itemText,
+        schema,
+        promptVersion,
+        callSite: 'orchestrator',
+        reviewerType,
+        timeoutMs: REVIEWER_TIMEOUT_MS,
+      });
+      args.onReviewerSettled(
+        {
+          reviewerType,
+          ok: true,
+          contract: result.data,
+          latencyMs: result.latencyMs,
+          schemaValid: result.schemaValid,
+        },
+        {
+          reviewerType,
+          callSite: 'orchestrator',
+          modelId: result.modelId,
+          modelFamilyOk: result.modelFamilyOk,
+          promptVersion: result.promptVersion,
+          promptHash: result.promptHash,
+          latencyMs: result.latencyMs,
+          tokensIn: result.tokensIn,
+          tokensOut: result.tokensOut,
+          schemaValid: result.schemaValid,
+          raw: result.raw,
+        },
+      );
+      return result.data;
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      const failureKind: ReviewerFailureKind = /timed out/iu.test(error)
+        ? 'timeout'
+        : /contract|schema|validation/iu.test(error)
+          ? 'schema'
+          : 'error';
+      args.onReviewerSettled({
+        reviewerType,
+        ok: false,
+        error,
+        failureKind,
+        latencyMs: Date.now() - startedAt,
+        schemaValid: false,
+      });
+      throw err;
+    }
+  };
+
+  const result = await runGauntlet(args.item, args.model, args.config, {
+    ...DEFAULT_GAUNTLET_DEPS,
+    reviewAmbiguity: modelReviewer(
+      'ambiguity',
+      AMBIGUITY_SYSTEM,
+      AMBIGUITY_PROMPT_VERSION,
+      AmbiguitySchema,
+    ),
+    reviewDiscipline: modelReviewer(
+      'discipline',
+      DISCIPLINE_SYSTEM,
+      DISCIPLINE_PROMPT_VERSION,
+      DisciplineSchema,
+    ),
+    reviewDistractors: modelReviewer(
+      'distractor',
+      DISTRACTOR_SYSTEM,
+      DISTRACTOR_PROMPT_VERSION,
+      DistractorMapSchema,
+    ),
+    runItemProbe(input) {
+      const startedAt = Date.now();
+      try {
+        const contract = DEFAULT_GAUNTLET_DEPS.runItemProbe(input);
+        args.onReviewerSettled({
+          reviewerType: 'item_probe',
+          ok: true,
+          contract,
+          latencyMs: Date.now() - startedAt,
+          schemaValid: true,
+        });
+        return contract;
+      } catch (err) {
+        args.onReviewerSettled({
+          reviewerType: 'item_probe',
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+          failureKind: 'error',
+          latencyMs: Date.now() - startedAt,
+          schemaValid: false,
+        });
+        throw err;
+      }
+    },
+  });
+  delimitedItemByRun.set(result, delimitedItem);
+  return result;
 }
 
 /**
- * TODO(codex): run the separate adjudication call and return its telemetry.
- *
- * Call `adjudicate(orchestration, adjudicatorModel, { delimitedItem })` — the
- * item text is ALREADY delimited by the orchestrator, so do not wrap it twice.
- * Return null only for the 'gauntlet-no-adjudication' eval config.
+ * Run the separate adjudication with a capturing transport wrapper. The wrapper
+ * delegates to the existing bounded call exactly once and exposes its telemetry
+ * alongside the adjudication domain result.
  */
-function adjudicateWithTelemetry(
-  _orchestration: OrchestrationResult,
+async function adjudicateWithTelemetry(
+  orchestration: OrchestrationResult,
 ): Promise<{ result: AdjudicationResult; telemetry?: ModelCallTelemetry } | null> {
-  void adjudicate;
-  throw new Error('TODO(codex): run the separate adjudication stage (doc §6.2)');
+  if (orchestration.config === 'gauntlet-no-adjudication') return null;
+
+  let captured: ModelCallResult<unknown> | undefined;
+  const capture = async <T>(modelArgs: ModelCallArgs<T>): Promise<ModelCallResult<T>> => {
+    const result = await callModel(modelArgs);
+    captured = result as ModelCallResult<unknown>;
+    return result;
+  };
+  const models = loadModelConfig();
+  const result = await adjudicate(orchestration, models.adjudicatorModel, {
+    callModel: capture,
+    delimitedItem: delimitedItemByRun.get(orchestration),
+  });
+  return {
+    result,
+    ...(captured === undefined
+      ? {}
+      : {
+          telemetry: {
+            callSite: 'adjudication',
+            modelId: captured.modelId,
+            modelFamilyOk: captured.modelFamilyOk,
+            promptVersion: captured.promptVersion,
+            promptHash: captured.promptHash,
+            latencyMs: captured.latencyMs,
+            tokensIn: captured.tokensIn,
+            tokensOut: captured.tokensOut,
+            schemaValid: captured.schemaValid,
+            raw: captured.raw,
+          },
+        }),
+  };
+}
+
+/** Persist the run envelope before any reviewer result is emitted. */
+async function createRun(record: RunStartRecord): Promise<{ gauntletRunId: string }> {
+  const run = await prisma.gauntletRun.create({
+    data: {
+      itemId: record.itemId,
+      itemVersionId: record.itemVersionId,
+      config: record.config,
+      compliance: record.compliance,
+    },
+    select: { id: true },
+  });
+  return { gauntletRunId: run.id };
 }
 
 /**
- * TODO(codex): create the GauntletRun row.
- *
- * itemId, itemVersionId, config and `compliance` (already computed from
- * loadModelConfig() by the envelope — persist it, do not recompute it).
- * startedAt defaults; completedAt stays null until `completeRun`.
+ * Atomically persist all call/check evidence, close the run, and apply only the
+ * lifecycle state already resolved by the pipeline. Executable checks are
+ * validated before storage so an incomplete identity cannot poison later
+ * history re-execution.
  */
-function createRun(_record: RunStartRecord): Promise<{ gauntletRunId: string }> {
-  throw new Error('TODO(codex): persist the GauntletRun row');
-}
+async function completeRun(record: RunCompletionRecord): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    for (const call of record.modelCalls) {
+      await tx.modelCall.create({
+        data: {
+          gauntletRunId: record.gauntletRunId,
+          callSite: call.callSite,
+          reviewerType: call.reviewerType ?? null,
+          modelId: call.modelId,
+          modelFamilyOk: call.modelFamilyOk,
+          promptVersion: call.promptVersion,
+          promptHash: call.promptHash,
+          latencyMs: call.latencyMs,
+          tokensIn: call.tokensIn ?? null,
+          tokensOut: call.tokensOut ?? null,
+          schemaValid: call.schemaValid,
+          rawJson: call.raw === undefined ? null : toJson(call.raw),
+        },
+      });
+    }
 
-/**
- * TODO(codex): persist everything the run produced, in one place.
- *
- *  1. One ModelCall row per entry in `record.modelCalls`: exact modelId,
- *     modelFamilyOk, promptVersion, promptHash, latencyMs, tokensIn/Out,
- *     schemaValid, rawJson, callSite and gauntletRunId (hard constraint 3).
- *  2. One Check row per entry in `record.checks`: reviewerType,
- *     verificationKind, checkClass, status, schemaValid, contractJson via
- *     toJson, the invariantId/executorVersion/thresholdVersion identity when the
- *     class is executable, and a Citation row for a discipline finding that
- *     carries one.
- *  3. GauntletRun.adjudicationState = record.adjudicationState,
- *     GauntletRun.completedAt = now. `compliance` was already written by
- *     `createRun`; do not recompute it here.
- *  4. Item.state = record.state when `record.events` is non-empty. The state is
- *     already resolved through reduce(); do not recompute it, and write nothing
- *     when `events` is empty — that is the "nothing was dispatched" case.
- */
-function completeRun(_record: RunCompletionRecord): Promise<void> {
-  void toJson;
-  throw new Error('TODO(codex): persist ModelCall + Check rows and close the GauntletRun');
+    for (const check of record.checks) {
+      RecordedCheckRowSchema.parse({ id: 'pending', ...check });
+      const contract =
+        check.contract !== null && typeof check.contract === 'object'
+          ? (check.contract as { citation?: unknown })
+          : undefined;
+      const citation =
+        contract?.citation !== null && typeof contract?.citation === 'object'
+          ? (contract.citation as {
+              source_id: string;
+              version_date: string;
+              license: string;
+              excerpt: string;
+              relevance: string;
+            })
+          : undefined;
+      const citationRow =
+        citation === undefined
+          ? null
+          : await tx.citation.create({
+              data: {
+                sourceId: citation.source_id,
+                versionDate: citation.version_date,
+                license: citation.license,
+                excerpt: citation.excerpt,
+                relevance: citation.relevance,
+              },
+              select: { id: true },
+            });
+      await tx.check.create({
+        data: {
+          itemVersionId: record.itemVersionId,
+          gauntletRunId: record.gauntletRunId,
+          reviewerType: check.reviewerType,
+          verificationKind: check.verificationKind,
+          checkClass: check.checkClass,
+          status: check.status,
+          schemaValid: check.schemaValid,
+          contractJson: toJson(check.contract),
+          invariantId: check.invariantId ?? null,
+          executorVersion: check.executorVersion ?? null,
+          thresholdVersion: check.thresholdVersion ?? null,
+          citationId: citationRow?.id ?? null,
+        },
+      });
+    }
+
+    await tx.gauntletRun.update({
+      where: { id: record.gauntletRunId },
+      data: {
+        adjudicationState: record.adjudicationState,
+        completedAt: new Date(),
+      },
+    });
+    if (record.events.length > 0) {
+      await tx.item.update({
+        where: { id: record.itemId },
+        data: { state: record.state },
+      });
+    }
+  });
 }
 
 /** Production wiring. Tests inject fakes through `handleGauntlet`'s second argument. */
@@ -422,34 +639,95 @@ export interface PipelineContext {
 }
 
 /**
- * TODO(codex): run the gauntlet and stream it.
- *
- *  1. `deps.createRun({ itemId, itemVersionId, config, compliance })`.
- *  2. `deps.runGauntlet({ ..., onReviewerSettled })`, and from INSIDE that
- *     callback `emit({ type: 'reviewer_result', ... })` with `degraded: !ok`.
- *     Do not wait for the batch: a fast reviewer must reach the client while a
- *     slow one is still running. A rejected reviewer emits `ok:false` with its
- *     `failureKind` and the run continues.
- *  3. `deps.adjudicate(orchestration)`, then `emit({ type: 'adjudication', ... })`
- *     carrying `gauntletComplete`.
- *  4. `resolveGauntletState(ctx.itemState, completionOf(adjudication))` — do NOT
- *     decide the event here; that function is the gate, and a null
- *     `dispatchedEvent` means the item stays in GAUNTLET.
- *  5. `deps.completeRun({ ... })` with every ModelCall telemetry collected in
- *     steps 2 and 3, and every adjudicated check.
- *  6. Return the summary for `run_completed`.
- *
- * NOTHING in here may throw for a partial failure: a dead reviewer is a
- * degraded lane, and the run still completes. Reference: doc §7.1, §6.2, §8.
+ * Run one streamed gauntlet pass. Reviewer events are emitted directly from
+ * the settlement callback, then the separate adjudication is gated through the
+ * pure lifecycle resolver before the complete audit record is persisted.
+ * Partial reviewer failures remain degraded lanes and never abort the pass.
  */
 async function runGauntletPipeline(
-  _emit: EmitFn,
-  _ctx: PipelineContext,
-  _deps: GauntletRouteDeps,
+  emit: EmitFn,
+  ctx: PipelineContext,
+  deps: GauntletRouteDeps,
 ): Promise<Omit<RunCompletedEvent, 'type'>> {
-  throw new Error(
-    'TODO(codex): implement the gauntlet pipeline (runGauntlet -> adjudicate -> persist -> emit)',
-  );
+  const { gauntletRunId } = await deps.createRun({
+    itemId: ctx.itemId,
+    itemVersionId: ctx.itemVersionId,
+    config: deps.config,
+    compliance: deps.compliance,
+  });
+
+  const modelCalls: ModelCallTelemetry[] = [];
+  const orchestration = await deps.runGauntlet({
+    item: ctx.item,
+    model: deps.reviewerModel,
+    config: deps.config,
+    onReviewerSettled(outcome, telemetry) {
+      if (telemetry !== undefined) modelCalls.push(telemetry);
+      emit({
+        type: 'reviewer_result',
+        reviewerType: outcome.reviewerType,
+        ok: outcome.ok,
+        degraded: !outcome.ok,
+        schemaValid: outcome.schemaValid,
+        latencyMs: outcome.latencyMs,
+        ...(outcome.contract === undefined ? {} : { contract: outcome.contract }),
+        ...(outcome.error === undefined ? {} : { error: outcome.error }),
+        ...(outcome.failureKind === undefined ? {} : { failureKind: outcome.failureKind }),
+      });
+    },
+  });
+
+  const adjudicated = await deps.adjudicate(orchestration);
+  const adjudication: AdjudicationResult =
+    adjudicated?.result ?? {
+      checks: [],
+      nextState: 'DEFENSE',
+      abstained: 0,
+      adjudicatorModelId: deps.adjudicatorModel,
+      gauntletComplete: false,
+      incompleteReason: 'adjudication did not complete.',
+    };
+  if (adjudicated?.telemetry !== undefined) modelCalls.push(adjudicated.telemetry);
+
+  emit({
+    type: 'adjudication',
+    checks: adjudication.checks.map((check) => ({
+      reviewerType: check.reviewerType,
+      verificationKind: check.verificationKind,
+      checkClass: check.checkClass,
+      status: check.status,
+      contract: check.contract,
+      schemaValid: check.schemaValid,
+      ...(check.note === undefined ? {} : { note: check.note }),
+    })),
+    nextState: adjudication.nextState,
+    abstained: adjudication.abstained,
+    gauntletComplete: adjudication.gauntletComplete,
+    ...(adjudication.incompleteReason === undefined
+      ? {}
+      : { incompleteReason: adjudication.incompleteReason }),
+  });
+
+  const resolved = resolveGauntletState(ctx.itemState, completionOf(adjudication));
+  await deps.completeRun({
+    gauntletRunId,
+    itemId: ctx.itemId,
+    itemVersionId: ctx.itemVersionId,
+    modelCalls,
+    checks: adjudication.checks,
+    adjudicationState: adjudication.nextState,
+    state: resolved.state,
+    events: resolved.events,
+    compliance: deps.compliance,
+  });
+
+  return {
+    gauntletRunId,
+    state: resolved.state,
+    dispatchedEvent: resolved.dispatchedEvent,
+    acceptedChecks: adjudication.checks.filter((check) => check.status === 'accepted').length,
+    compliance: deps.compliance,
+  };
 }
 
 /**
@@ -522,14 +800,12 @@ export async function handleGauntlet(
         } catch (err) {
           // eslint-disable-next-line no-console
           console.error('[api/gauntlet] pipeline failed', err);
-          const detail = err instanceof Error ? err.message : String(err);
           emit({
             type: 'error',
             code: 'gauntlet_failed',
-            message:
-              process.env.NODE_ENV === 'production'
-                ? 'The gauntlet run failed. See server logs.'
-                : detail,
+            // Provider, database, and credential details stay server-side in
+            // every environment; the streamed response is a public boundary.
+            message: 'The gauntlet run failed. See server logs.',
           });
         } finally {
           controller.close();

@@ -688,7 +688,7 @@ describe('the stream is well formed and contained', () => {
  * Everything below drives `runGauntletPipeline` through injected fakes. Unskip
  * as src/app/api/gauntlet/route.ts is filled in.
  */
-describe.skip('the streaming pipeline (Codex)', () => {
+describe('the streaming pipeline (Codex)', () => {
   // -------------------------------------------------------------------------
   // 1. It really streams
   // -------------------------------------------------------------------------

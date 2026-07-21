@@ -79,6 +79,24 @@ const SCHEMA_PATH = join(REPO_ROOT, 'prisma', 'schema.prisma');
 let templatePath: string | undefined;
 
 /**
+ * Where every database directory for THIS run is nested.
+ *
+ * tests/helpers/globalSetup.ts creates a run-scoped root and exports its path,
+ * then deletes the whole subtree once the workers are gone. Vitest terminates
+ * workers without firing `process.on('exit')`, so a per-worker exit hook cannot
+ * be trusted to reap anything — the run-scoped root is the cleanup boundary.
+ *
+ * The `tmpdir()` fallback keeps this helper usable outside the Vitest runner
+ * (a one-off script, a debugger); nothing is auto-reaped on that path.
+ */
+function testDbRoot(): string {
+  const root = process.env.FORJA_TESTDB_ROOT;
+  if (root === undefined || root === '') return tmpdir();
+  mkdirSync(root, { recursive: true });
+  return root;
+}
+
+/**
  * Push prisma/schema.prisma into a single template file, once per process.
  * Synchronous on purpose: `createTestDb` may be called from several `beforeAll`
  * hooks and a lazily-awaited promise would let two of them race the push.
@@ -86,7 +104,7 @@ let templatePath: string | undefined;
 function ensureTemplate(): string {
   if (templatePath !== undefined) return templatePath;
 
-  const dir = mkdtempSync(join(tmpdir(), `forja-testdb-template-${process.pid}-`));
+  const dir = mkdtempSync(join(testDbRoot(), `forja-testdb-template-${process.pid}-`));
   const file = join(dir, 'template.db');
 
   execFileSync(PRISMA_BIN, ['db', 'push', '--schema', SCHEMA_PATH, '--skip-generate', '--accept-data-loss'], {
@@ -99,8 +117,11 @@ function ensureTemplate(): string {
     throw new Error(`prisma db push reported success but produced no file at ${file}`);
   }
 
-  // The template outlives individual test databases, so it is reaped when the
-  // worker exits rather than by any one teardown.
+  // The template outlives individual test databases, so no single `teardown()`
+  // may delete it; the run-scoped root in globalSetup.ts reaps it instead. The
+  // exit hook below is a best-effort extra for non-Vitest callers — Vitest
+  // terminates workers without firing it, which is exactly why it is not the
+  // primary mechanism.
   process.once('exit', () => {
     rmSync(dir, { recursive: true, force: true });
   });

@@ -729,7 +729,7 @@ describe('a published version is immutable', () => {
  * Everything below drives `applyRepair` through injected fakes. Unskip as
  * src/app/api/repair/route.ts is filled in.
  */
-describe.skip('the repair pipeline (Codex)', () => {
+describe('the repair pipeline (Codex)', () => {
   // -------------------------------------------------------------------------
   // 1. A repair is a NEW version, never an edit
   // -------------------------------------------------------------------------

@@ -42,9 +42,10 @@ import {
   parseBody,
   readJsonBody,
 } from '@/demo/isolation';
-import { prisma } from '@/db/client';
+import { fromJson, prisma, toJson } from '@/db/client';
 import { reduce } from '@/core/stateMachine';
 import {
+  RecordedCheckRowSchema,
   reRunHistory,
   type HistoryRunBatch,
   type RecordedCheck,
@@ -236,57 +237,118 @@ export interface RepairDeps {
   recordHistoryRun(record: HistoryRunRecord): Promise<void>;
 }
 
-/**
- * TODO(codex): create the NEW ItemVersion.
- *
- *  1. Insert an ItemVersion with `versionNumber`, `previousVersionId`,
- *     `optionsJson: toJson(record.options)`, `diffJson: toJson(record.diff)` and
- *     `immutable: false`.
- *  2. NEVER update the previous row. Not its stem, not its options, not its
- *     `immutable` flag — a published version is frozen evidence, and the whole
- *     passport rests on it still saying what it said.
- */
-function createVersion(_record: NewVersionRecord): Promise<CreatedVersion> {
-  throw new Error('TODO(codex): insert the new ItemVersion (never mutate the previous one)');
+/** Create a new immutable-lineage child without ever updating its diff base. */
+async function createVersion(record: NewVersionRecord): Promise<CreatedVersion> {
+  const version = await prisma.itemVersion.create({
+    data: {
+      itemId: record.itemId,
+      previousVersionId: record.previousVersionId,
+      versionNumber: record.versionNumber,
+      stem: record.stem,
+      optionsJson: toJson(record.options),
+      correctKey: record.correctKey,
+      authorRationale: record.authorRationale,
+      diffJson: toJson(record.diff),
+      immutable: false,
+    },
+    select: { id: true, versionNumber: true },
+  });
+  return version;
 }
 
 /**
- * TODO(codex): load the FULL recorded check history for the item.
- *
- * Every `Check` row with status 'accepted' across ALL versions of this item,
- * rebuilt into `RecordedCheck` through `RecordedCheckRowSchema` (src/core/checks)
- * so a malformed row is rejected loudly instead of becoming a silent
- * 'inconclusive'.
+ * Load every accepted check across the item's full lineage and validate the
+ * persisted taxonomy and executable identity before rebuilding domain records.
  */
-function loadRecordedHistory(_itemId: string): Promise<RecordedCheck[]> {
-  throw new Error('TODO(codex): load the full recorded check history');
+async function loadRecordedHistory(itemId: string): Promise<RecordedCheck[]> {
+  const rows = await prisma.check.findMany({
+    where: { status: 'accepted', itemVersion: { itemId } },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  return rows.map((row): RecordedCheck => {
+    const parsed = RecordedCheckRowSchema.parse(row);
+    const base = {
+      id: parsed.id,
+      reviewerType: parsed.reviewerType,
+      verificationKind: parsed.verificationKind,
+      contract: fromJson<unknown>(row.contractJson),
+    };
+    if (parsed.checkClass === 'semantic') {
+      return { ...base, checkClass: 'semantic' };
+    }
+    if (
+      parsed.invariantId === null || parsed.invariantId === undefined ||
+      parsed.executorVersion === null || parsed.executorVersion === undefined ||
+      parsed.thresholdVersion === null || parsed.thresholdVersion === undefined
+    ) {
+      throw new Error(`Executable check '${parsed.id}' has incomplete identity`);
+    }
+    return {
+      ...base,
+      checkClass: parsed.checkClass,
+      invariantId: parsed.invariantId,
+      executorVersion: parsed.executorVersion,
+      thresholdVersion: parsed.thresholdVersion,
+    };
+  });
 }
 
 /**
- * TODO(codex): count those rows INDEPENDENTLY.
- *
- * A `prisma.check.count` with the SAME where-clause as `loadRecordedHistory`.
- * Do not call `loadRecordedHistory` and take its length: the two must be able to
- * disagree, because that disagreement is the only evidence a truncated load
- * leaves behind.
+ * Count the same accepted rows with an independent database aggregate so a
+ * truncated object load remains observable by the history gate.
  */
-function countRecordedChecks(_itemId: string): Promise<number> {
-  throw new Error('TODO(codex): count the recorded checks with an independent query');
+function countRecordedChecks(itemId: string): Promise<number> {
+  return prisma.check.count({ where: { status: 'accepted', itemVersion: { itemId } } });
 }
 
 /**
- * TODO(codex): persist the history re-run.
- *
- *  1. One HistoryRunBatch row: expectedCheckCount, completedCheckCount, status,
- *     blocksPublish, startedAt, completedAt — copied from `record.batch`, not
- *     recomputed.
- *  2. One HistoryReRun row per outcome (batchId, itemVersionId = the NEW
- *     version, originalCheckId, checkClass, result, detailsJson).
- *  3. Item.state = record.state and Item.currentVersionId = record.newVersionId.
- *     The state is already resolved through reduce(); do not re-derive it.
+ * Persist the batch evidence, every per-check outcome, and the resolved item
+ * pointer/state atomically. Batch counts and status are copied verbatim from the
+ * fail-closed engine rather than recomputed at the storage boundary.
  */
-function recordHistoryRun(_record: HistoryRunRecord): Promise<void> {
-  throw new Error('TODO(codex): persist the HistoryRunBatch + HistoryReRun rows');
+async function recordHistoryRun(record: HistoryRunRecord): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const batch = await tx.historyRunBatch.create({
+      data: {
+        itemVersionId: record.newVersionId,
+        expectedCheckCount: record.batch.expectedCheckCount,
+        completedCheckCount: record.batch.completedCheckCount,
+        status: record.batch.status,
+        blocksPublish: record.batch.blocksPublish,
+        startedAt: new Date(record.batch.startedAt),
+        completedAt:
+          record.batch.completedAt === null ? null : new Date(record.batch.completedAt),
+      },
+    });
+
+    for (const outcome of record.batch.outcomes) {
+      const detailsJson =
+        'verdict' in outcome
+          ? toJson({
+              verdict: outcome.verdict,
+              ...(outcome.detail === undefined ? {} : { detail: outcome.detail }),
+            })
+          : outcome.detail === undefined
+            ? null
+            : toJson(outcome.detail);
+      await tx.historyReRun.create({
+        data: {
+          batchId: batch.id,
+          itemVersionId: record.newVersionId,
+          originalCheckId: outcome.originalCheckId,
+          checkClass: outcome.checkClass,
+          result: outcome.result,
+          detailsJson,
+        },
+      });
+    }
+
+    await tx.item.update({
+      where: { id: record.itemId },
+      data: { state: record.state, currentVersionId: record.newVersionId },
+    });
+  });
 }
 
 /** Production wiring. Tests inject fakes through `handleRepair`'s second argument. */
@@ -308,36 +370,81 @@ export interface RepairOutcome {
 }
 
 /**
- * TODO(codex): apply the repair.
- *
- *  1. Compute the diff vs `previous` and call `deps.createVersion` with
- *     `versionNumber: previous.versionNumber + 1` and
- *     `previousVersionId: previous.id`. The envelope has already rejected a
- *     repair aimed at an immutable version outside the dispute path.
- *  2. Load the history and count it INDEPENDENTLY:
- *       const history = await deps.loadRecordedHistory(itemId);
- *       const expected = await deps.countRecordedChecks(itemId);
- *     then call `reRunHistory(history, newVersion, expected)`. Pass `expected`
- *     through untouched — NOT `history.length`, and never `Math.min` of the two.
- *     The `newVersion` argument is the version under check
- *     ({ id, versionNumber, stem, options, correctKey, authorRationale }).
- *  3. `resolveRepairState(itemState, batch)` decides the transition. Do not
- *     branch on `blocksPublish` yourself; `historyEventFor` is the gate.
- *  4. `deps.recordHistoryRun({ ... })`.
- *  5. Return the outcome; the envelope groups it with `groupOutcomesByClass`.
- *
- * Reference: doc §5, gate §13.3 (the exact check that broke v1 and passes v2).
+ * Create the repaired child version, execute the independently counted full
+ * history against it, and persist the state selected by the canonical history
+ * gate. The previous version is only read while constructing the recorded diff.
  */
 async function applyRepair(
-  _body: RepairRequest,
-  _previous: PreviousVersion,
-  _itemState: ItemState,
-  _deps: RepairDeps,
+  body: RepairRequest,
+  previous: PreviousVersion,
+  itemState: ItemState,
+  deps: RepairDeps,
 ): Promise<RepairOutcome> {
-  void reRunHistory;
-  throw new Error(
-    'TODO(codex): implement repair (new ItemVersion -> diff -> reRunHistory -> state event)',
+  const previousOptions = fromJson<string[]>(previous.optionsJson);
+  const changes: string[] = [];
+  if (previous.stem !== body.stem) {
+    changes.push(`stem: ${JSON.stringify(previous.stem)} -> ${JSON.stringify(body.stem)}`);
+  }
+  if (JSON.stringify(previousOptions) !== JSON.stringify(body.options)) {
+    changes.push(
+      `options: ${JSON.stringify(previousOptions)} -> ${JSON.stringify(body.options)}`,
+    );
+  }
+  if (previous.correctKey !== body.correctKey) {
+    changes.push(`correctKey: ${previous.correctKey} -> ${body.correctKey}`);
+  }
+  if (previous.authorRationale !== body.authorRationale) {
+    changes.push(
+      `authorRationale: ${JSON.stringify(previous.authorRationale)} -> ${JSON.stringify(body.authorRationale)}`,
+    );
+  }
+  const diff = changes.length === 0 ? 'No content changes.' : changes.join('\n');
+
+  const created = await deps.createVersion({
+    itemId: body.itemId,
+    previousVersionId: previous.id,
+    versionNumber: previous.versionNumber + 1,
+    stem: body.stem,
+    options: body.options,
+    correctKey: body.correctKey,
+    authorRationale: body.authorRationale,
+    diff,
+  });
+
+  const [history, expectedCheckCount] = await Promise.all([
+    deps.loadRecordedHistory(body.itemId),
+    deps.countRecordedChecks(body.itemId),
+  ]);
+  const batch = reRunHistory(
+    history,
+    {
+      id: created.id,
+      versionNumber: created.versionNumber,
+      stem: body.stem,
+      options: body.options,
+      correctKey: body.correctKey,
+      authorRationale: body.authorRationale,
+    },
+    expectedCheckCount,
   );
+  const resolved = resolveRepairState(itemState, batch);
+
+  await deps.recordHistoryRun({
+    itemId: body.itemId,
+    newVersionId: created.id,
+    batch,
+    state: resolved.state,
+    events: resolved.events,
+  });
+
+  return {
+    newVersionId: created.id,
+    versionNumber: created.versionNumber,
+    diff,
+    batch,
+    state: resolved.state,
+    events: resolved.events,
+  };
 }
 
 /**
@@ -399,20 +506,31 @@ export async function handleRepair(
     // to repair never creates an orphan version.
     repairEntryEventFor(itemState);
 
-    const result = await applyRepair(
-      body,
-      {
-        id: previous.id,
-        versionNumber: previous.versionNumber,
-        stem: previous.stem,
-        optionsJson: previous.optionsJson,
-        correctKey: previous.correctKey,
-        authorRationale: previous.authorRationale,
-        immutable: previous.immutable,
-      },
-      itemState,
-      deps,
-    );
+    let result: RepairOutcome;
+    try {
+      result = await applyRepair(
+        body,
+        {
+          id: previous.id,
+          versionNumber: previous.versionNumber,
+          stem: previous.stem,
+          optionsJson: previous.optionsJson,
+          correctKey: previous.correctKey,
+          authorRationale: previous.authorRationale,
+          immutable: previous.immutable,
+        },
+        itemState,
+        deps,
+      );
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[api/repair] pipeline failed', err);
+      throw new ApiError(
+        500,
+        'internal_error',
+        'The repair could not be saved. Retry in a moment.',
+      );
+    }
 
     const payload: RepairResponse = {
       itemId: item.id,

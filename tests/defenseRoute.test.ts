@@ -58,8 +58,8 @@ const defenseUpdateMock = vi.fn();
 const modelCallCreateMock = vi.fn();
 const itemUpdateMock = vi.fn();
 
-vi.mock('@/db/client', () => ({
-  prisma: {
+vi.mock('@/db/client', () => {
+  const prisma = {
     session: {
       create: (...args: unknown[]) => sessionCreateMock(...args),
       findUnique: (...args: unknown[]) => sessionFindUniqueMock(...args),
@@ -78,10 +78,14 @@ vi.mock('@/db/client', () => ({
     modelCall: {
       create: (...args: unknown[]) => modelCallCreateMock(...args),
     },
-  },
-  toJson: (value: unknown) => JSON.stringify(value),
-  fromJson: (text: string) => JSON.parse(text) as unknown,
-}));
+    $transaction: async <T>(work: (tx: unknown) => Promise<T>): Promise<T> => work(prisma),
+  };
+  return {
+    prisma,
+    toJson: (value: unknown) => JSON.stringify(value),
+    fromJson: (text: string) => JSON.parse(text) as unknown,
+  };
+});
 
 const {
   defenseEventFor,
@@ -178,6 +182,21 @@ function rubricOf(scores: readonly [Score, Score, Score]): DefenseRubric {
 
 const PASSING_RUBRIC = rubricOf([2, 2, 1]);
 const FAILING_RUBRIC = rubricOf([1, 0, 1]);
+
+function telemetry(): ModelCallResult<unknown> {
+  return {
+    data: { ok: true },
+    raw: '{"ok":true}',
+    modelId: TEST_MODEL,
+    modelFamilyOk: true,
+    latencyMs: 12,
+    tokensIn: 100,
+    tokensOut: 50,
+    promptVersion: 'defense-test-v1',
+    promptHash: 'deadbeefdeadbeef',
+    schemaValid: true,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // The transport seam: a scripted fake, mirroring tests/viva.test.ts
@@ -834,13 +853,14 @@ describe('accepted findings', () => {
  * that must actually land. Unskip as `recordQuestions` / `recordScoring` are
  * implemented in src/app/api/defense/route.ts.
  */
-describe.skip('production persistence (Codex)', () => {
+describe('production persistence (Codex)', () => {
   it('upserts the Defense row with the questions and outcome pending', async () => {
     defenseUpsertMock.mockResolvedValue({ id: 'def_1' });
     await productionDeps().recordQuestions({
       itemId: ITEM_ID,
       itemVersionId: VERSION_ID,
       questions: QUESTIONS_OK,
+      telemetry: telemetry(),
       state: 'DEFENSE',
       events: [],
     });
@@ -861,6 +881,7 @@ describe.skip('production persistence (Codex)', () => {
       itemId: ITEM_ID,
       itemVersionId: VERSION_ID,
       questions: QUESTIONS_OK,
+      telemetry: telemetry(),
       state: 'DEFENSE',
       events: [],
     });
@@ -892,16 +913,30 @@ describe.skip('production persistence (Codex)', () => {
       itemVersionId: VERSION_ID,
       answers: ANSWERS,
       rubric: inconclusive,
+      telemetry: telemetry(),
       outcome: 'inconclusive',
       state: 'DEFENSE_INCONCLUSIVE',
       events: ['DEFENSE_EVALUATOR_FAILED'],
     });
 
     const args = defenseUpdateMock.mock.calls[0]?.[0] as {
-      data: { rubricJson: string; totalScore: number; outcome: string };
+      data: { rubricJson: string; totalScore: number | null; outcome: string };
     };
     expect(args.data.outcome).toBe('inconclusive');
-    expect(args.data.totalScore).toBe(0);
+
+    // NULL, not 0. This assertion originally required 0 and contradicted
+    // tests/persistence.test.ts, which requires null for the same write — the
+    // conflict was caught when the suite was unskipped, and null is the side
+    // that is right. A stored 0 is a NUMBER: it renders as a score, sorts as the
+    // worst one, and averages into a class as a failure. "Inconclusive" means
+    // there is no score, and the absence of a score is null. The whole reason
+    // the state exists is that an evaluator that broke must never be
+    // indistinguishable from a student who scored nothing.
+    expect(args.data.totalScore).toBeNull();
+
+    // The rubric shell is still written with all three dimensions, so the
+    // passport can show WHICH dimensions went unassessed rather than an empty
+    // record — but it carries no total, per the assertion above.
     expect((JSON.parse(args.data.rubricJson) as DefenseRubric).dimensions).toHaveLength(3);
   });
 
@@ -912,6 +947,7 @@ describe.skip('production persistence (Codex)', () => {
       itemVersionId: VERSION_ID,
       answers: ANSWERS,
       rubric: PASSING_RUBRIC,
+      telemetry: telemetry(),
       outcome: 'passed',
       state: 'PUBLISHED',
       events: ['DEFENSE_PASSED'],

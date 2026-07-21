@@ -58,7 +58,7 @@ import {
   readJsonBody,
 } from '@/demo/isolation';
 import { fromJson, prisma, toJson } from '@/db/client';
-import { loadModelConfig } from '@/config/models';
+import { isCompliantModel, loadModelConfig } from '@/config/models';
 import { reduce } from '@/core/stateMachine';
 import {
   DEFAULT_VIVA_DEPS,
@@ -69,7 +69,11 @@ import {
   type VivaDeps,
 } from '@/defense/viva';
 import type { DefenseRubric, ItemState, StateEvent } from '@/core/types';
-import type { ModelCallResult } from '@/openai/client';
+import {
+  promptHash,
+  type ModelCallArgs,
+  type ModelCallResult,
+} from '@/openai/client';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -201,6 +205,8 @@ export interface QuestionsRecord {
   itemId: string;
   itemVersionId: string;
   questions: DefenseQuestion[];
+  /** Exact result of the model call that authored these questions. */
+  telemetry: ModelCallResult<unknown>;
   /** Item state after `events` were applied. */
   state: ItemState;
   events: StateEvent[];
@@ -216,6 +222,8 @@ export interface ScoringRecord {
    * what the audit trail must retain. The RESPONSE nulls it; the record does not.
    */
   rubric: DefenseRubric;
+  /** Exact result, or failure telemetry, from the call that attempted scoring. */
+  telemetry: ModelCallResult<unknown>;
   outcome: DefenseOutcome;
   state: ItemState;
   events: StateEvent[];
@@ -258,12 +266,7 @@ async function loadAcceptedFindings(itemVersionId: string): Promise<unknown[]> {
  * Reference: doc §6.3.
  */
 async function recordQuestions(record: QuestionsRecord): Promise<void> {
-  const telemetry = (
-    record as QuestionsRecord & { telemetry?: ModelCallResult<unknown> }
-  ).telemetry;
-  if (telemetry === undefined) {
-    throw new Error('Defense question telemetry is required for the audit trail');
-  }
+  const telemetry = record.telemetry;
 
   await prisma.$transaction(async (tx) => {
     const defense = await tx.defense.upsert({
@@ -320,12 +323,7 @@ async function recordQuestions(record: QuestionsRecord): Promise<void> {
  * Reference: doc §6.3.
  */
 async function recordScoring(record: ScoringRecord): Promise<void> {
-  const telemetry = (
-    record as ScoringRecord & { telemetry?: ModelCallResult<unknown> }
-  ).telemetry;
-  if (telemetry === undefined) {
-    throw new Error('Defense scoring telemetry is required for the audit trail');
-  }
+  const telemetry = record.telemetry;
 
   await prisma.$transaction(async (tx) => {
     const defense = await tx.defense.update({
@@ -394,6 +392,52 @@ async function buildContext(ref: VersionRef, deps: DefenseDeps): Promise<VivaCon
 }
 
 /**
+ * Capture the one viva call made by a request. Successful calls retain the
+ * provider-returned ModelCallResult verbatim. If the call rejects, record the
+ * request-side facts that still exist (model, prompt identity and elapsed time)
+ * with schemaValid=false, then rethrow so scoreDefense can produce its
+ * inconclusive rubric.
+ */
+function captureVivaCall(viva: VivaDeps): {
+  viva: VivaDeps;
+  telemetry: () => ModelCallResult<unknown> | undefined;
+} {
+  let captured: ModelCallResult<unknown> | undefined;
+  const tracked: VivaDeps = {
+    callModel: async <T>(args: ModelCallArgs<T>): Promise<ModelCallResult<T>> => {
+      const startedAt = Date.now();
+      try {
+        const result = await viva.callModel(args);
+        captured = result as ModelCallResult<unknown>;
+        return result;
+      } catch (err) {
+        captured = {
+          data: null,
+          raw: '',
+          modelId: args.model,
+          modelFamilyOk: isCompliantModel(args.model),
+          latencyMs: Date.now() - startedAt,
+          promptVersion: args.promptVersion,
+          promptHash: promptHash(args.system),
+          schemaValid: false,
+        };
+        throw err;
+      }
+    },
+  };
+  return { viva: tracked, telemetry: () => captured };
+}
+
+function requireCapturedTelemetry(
+  captured: ModelCallResult<unknown> | undefined,
+): ModelCallResult<unknown> {
+  if (captured === undefined) {
+    throw new Error('The viva call completed without producing audit telemetry');
+  }
+  return captured;
+}
+
+/**
  * The real handler. `POST` is a thin wrapper so Next.js gets the signature it
  * expects while tests can inject `DefenseDeps`.
  */
@@ -450,10 +494,11 @@ export async function handleDefense(
     if (!body.answers) {
       const entered = enterDefense(ref.itemState);
       const ctx = await buildContext(ref, deps);
+      const tracked = captureVivaCall(deps.viva);
 
       let questions: DefenseQuestion[];
       try {
-        questions = await generateDefenseQuestions(ctx, deps.model, deps.viva);
+        questions = await generateDefenseQuestions(ctx, deps.model, tracked.viva);
       } catch (err) {
         // Not "inconclusive": there is no rubric to be inconclusive about and no
         // event to carry it. The item is untouched and still in DEFENSE.
@@ -466,6 +511,7 @@ export async function handleDefense(
         itemId: ref.itemId,
         itemVersionId: ref.itemVersionId,
         questions,
+        telemetry: requireCapturedTelemetry(tracked.telemetry()),
         state: entered.state,
         events: entered.events,
       });
@@ -484,10 +530,11 @@ export async function handleDefense(
     // Validate the transition BEFORE spending a model call.
     enterDefense(ref.itemState);
     const ctx = await buildContext(ref, deps);
+    const tracked = captureVivaCall(deps.viva);
 
     // scoreDefense NEVER throws on evaluator failure — it returns the
     // inconclusive rubric. Nothing below may convert that into an HTTP error.
-    const rubric = await scoreDefense(ctx, body.answers, deps.model, deps.viva);
+    const rubric = await scoreDefense(ctx, body.answers, deps.model, tracked.viva);
     const outcome = outcomeFor(rubric);
     const resolved = resolveScoredState(ref.itemState, outcome);
 
@@ -496,6 +543,7 @@ export async function handleDefense(
       itemVersionId: ref.itemVersionId,
       answers: body.answers,
       rubric,
+      telemetry: requireCapturedTelemetry(tracked.telemetry()),
       outcome,
       state: resolved.state,
       events: resolved.events,
