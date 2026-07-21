@@ -37,10 +37,13 @@
  * must resolve to a route.ts on disk.
  */
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { reduce } from '@/core/stateMachine';
+import OnboardingDrawer from './OnboardingDrawer';
 import {
   RUBRIC_DIMENSIONS,
   type AmbiguityContract,
@@ -631,8 +634,14 @@ const ROADMAP: string[] = [
 
 const OPTION_KEYS = ['A', 'B', 'C', 'D', 'E'];
 
+// The single authorized guarantee rendering (doc §5) — never paraphrased.
 const GUARANTEE_TEXT =
-  'Every repair re-runs the full recorded history. Each class keeps its own promise; no stronger claim is inferred.';
+  'Every accepted check is re-run on each new version. The system guarantees ' +
+  'execution of the history and non-regression of deterministic invariants; ' +
+  'semantic judgments are re-adjudicated and remain visible in the passport.';
+
+/** localStorage flag so the onboarding drawer opens only on the first visit. */
+const ONBOARDING_SEEN_KEY = 'la-forja-onboarding-v1';
 
 // ---------------------------------------------------------------------------
 // Small pure helpers (presentation only)
@@ -776,6 +785,29 @@ export default function StudioClient({
   const gauntletStartedRef = useRef<number | null>(null);
   const counterexampleRef = useRef<HTMLElement | null>(null);
 
+  // First-visit onboarding. Presentation state only: a dismissed drawer is
+  // remembered in localStorage — a UI flag, never data about the visitor.
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(ONBOARDING_SEEN_KEY) === null) {
+        setOnboardingOpen(true);
+      }
+    } catch {
+      // Storage unavailable (private mode): skip the drawer rather than error.
+    }
+  }, []);
+  const dismissOnboarding = useCallback((open: boolean) => {
+    setOnboardingOpen(open);
+    if (!open) {
+      try {
+        window.localStorage.setItem(ONBOARDING_SEEN_KEY, 'seen');
+      } catch {
+        // Best effort only.
+      }
+    }
+  }, []);
+
   // -- state machine bridge -------------------------------------------------
   // The UI never decides a transition; it asks the Codex-owned reducer.
   const applyEvent = useCallback((event: StateEvent): ItemState | null => {
@@ -823,6 +855,9 @@ export default function StudioClient({
       setSession({ ...info, item: loadedItem });
       setItem(loadedItem);
       setDraft(draftOf(loadedItem));
+      toast.success('Demo challenge loaded', {
+        description: `Signed in as ${info.pseudonym}. Version 1 is on the sheet — find the defect.`,
+      });
     } catch (err) {
       // Keep the sheet inspectable if local persistence has not been seeded,
       // while explicitly marking the fallback as unrecorded.
@@ -869,7 +904,11 @@ export default function StudioClient({
       const startedAt = gauntletStartedRef.current;
       if (hasCounterexample && startedAt !== null) {
         const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-        setTimeToCounterexampleMs(Math.round(now - startedAt));
+        const elapsed = Math.round(now - startedAt);
+        setTimeToCounterexampleMs(elapsed);
+        toast.warning('Counterexample accepted', {
+          description: `First useful counterexample in ${(elapsed / 1000).toFixed(1)}s. The item is now CHALLENGED.`,
+        });
       }
 
       applyEvent(result.event);
@@ -914,6 +953,15 @@ export default function StudioClient({
       // no window in which the item can be left stuck in REGRESSION.
       if (!applyEvent('SUBMIT_REPAIR')) return;
       applyEvent(repair.reRun.blocksPublish ? 'HISTORY_REGRESSED' : 'HISTORY_CLEAN');
+      if (repair.reRun.blocksPublish) {
+        toast.warning(`Version ${repair.versionNumber} recorded — a check still holds`, {
+          description: 'The re-run found a regression, so publication stays blocked.',
+        });
+      } else {
+        toast.success(`Version ${repair.versionNumber} recorded — history clean`, {
+          description: `${repair.reRun.total} check(s) re-ran against the new version. The defense is open.`,
+        });
+      }
     } catch (err) {
       setNotice({
         tone: 'warn',
@@ -955,6 +1003,19 @@ export default function StudioClient({
       // null on an evaluator failure; the rubric card renders its empty state.
       setRubric(result.rubric);
       const next = applyEvent(result.event);
+      if (result.outcome === 'passed') {
+        toast.success('Defense passed', {
+          description: 'The rubric threshold is met. Publishing with a passport.',
+        });
+      } else if (result.outcome === 'failed') {
+        toast.warning('Defense not passed', {
+          description: 'The item returns to CHALLENGED. Read the rubric evidence and try again.',
+        });
+      } else {
+        toast.info('Evaluator failed — no verdict recorded', {
+          description: 'Inconclusive is a retry, never an automatic reject.',
+        });
+      }
       if (next === 'PUBLISHED') {
         const built = await api.loadPassport(item.id);
         setPassport(built);
@@ -1063,9 +1124,22 @@ export default function StudioClient({
 
   return (
     <main className="shell">
+      <OnboardingDrawer
+        open={onboardingOpen}
+        onOpenChange={dismissOnboarding}
+        onStart={() => {
+          dismissOnboarding(false);
+          if (item === null && busy === null) void handleLoadDemo();
+        }}
+        demoLoaded={item !== null}
+        modelCallsAvailable={modelCallsAvailable}
+      />
+
       <header className="masthead">
         <div className="masthead__claim">
-          <h1 className="wordmark">LA FORJA</h1>
+          <Link className="masthead__home" href="/">
+            <h1 className="wordmark">LA FORJA</h1>
+          </Link>
           <p className="tagline">
             Getting the right answer is not enough. Forge it, attack it, defend it.
           </p>
@@ -1171,6 +1245,13 @@ export default function StudioClient({
               disabled={busy !== null || item !== null}
             >
               {busy === 'load' ? 'Loading…' : 'Load demo challenge'}
+            </button>
+            <button
+              type="button"
+              className="btn btn--quiet"
+              onClick={() => setOnboardingOpen(true)}
+            >
+              Replay the intro
             </button>
             <span className="btn-note">Team-authored original · CC-BY · probability</span>
           </div>
@@ -1604,10 +1685,10 @@ export default function StudioClient({
               <span className="panel__aside"><span className="station">STAMP</span>item level · pseudonym only</span>
             </div>
             <p className="panel__lede">
-              What publishing is designed to produce is an auditable learning trace:
-              provenance and license, accepted attacks, the history re-run by class, the
-              discipline verdict with its full citation or marked unverified, the rubric, and
-              the version diff. Assembling it is next.
+              Publishing produces an auditable learning trace: provenance and license,
+              accepted attacks, the history re-run by class, the discipline verdict with
+              its full citation or marked unverified, the rubric, and the version diff.
+              It is assembled at publication and frozen.
             </p>
 
             <div className="panel__body">
