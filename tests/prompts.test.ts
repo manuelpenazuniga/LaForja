@@ -109,8 +109,13 @@ describe('DISTRACTOR_SYSTEM asks for the §6.2 MAP, not one finding', () => {
     expect(DISTRACTOR_SYSTEM).toContain('one entry per distractor');
   });
 
-  it('asks for a JSON array rather than a single object', () => {
-    expect(DISTRACTOR_SYSTEM).toContain('JSON ARRAY');
+  it('asks for the map of entries (an array), not a single finding', () => {
+    // Still the §6.2 MAP — one entry per distractor. The array is carried under a
+    // "findings" key so the JSON root is an object, which the OpenAI structured
+    // output / json_object modes require; a bare array root is rejected.
+    expect(DISTRACTOR_SYSTEM).toContain('ARRAY');
+    expect(DISTRACTOR_SYSTEM).toContain('"findings"');
+    expect(DISTRACTOR_SYSTEM).toContain('one entry per distractor');
   });
 
   it('gives every entry its own label and confidence', () => {
@@ -138,8 +143,13 @@ describe('DISTRACTOR_SYSTEM asks for the §6.2 MAP, not one finding', () => {
       new URL('../src/reviewers/distractors.ts', import.meta.url),
       'utf8',
     );
-    expect(src).toContain('schema: DistractorMapSchema');
-    expect(src).not.toMatch(/schema:\s*DistractorSchema/);
+    // The map is the contract. It is wrapped under `findings` ONLY because the
+    // API requires a JSON object root, never a bare array — the array's rules
+    // (non-empty, unique keys, per-entry validation) are unchanged because
+    // DistractorMapSchema is nested verbatim. The single-finding schema is never
+    // what gets sent.
+    expect(src).toContain('findings: DistractorMapSchema');
+    expect(src).not.toMatch(/schema:\s*DistractorSchema\b/);
   });
 });
 

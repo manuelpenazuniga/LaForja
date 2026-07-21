@@ -292,18 +292,25 @@ export const openaiTransport: ModelTransport = async (req) => {
   const format = hasOptionalFields
     ? ({ type: 'json_object' } as const)
     : zodTextFormat(req.schema, req.schemaName);
-  const jsonModeInstruction = hasOptionalFields
-    ? 'Return only one valid JSON value matching the requested evidence contract.'
-    : undefined;
-  const instructions = [req.system, jsonModeInstruction, req.repairNudge]
+  const instructions = [req.system, req.repairNudge]
     .filter((line): line is string => line !== undefined)
     .join('\n');
+
+  // In json_object mode the API rejects the request unless the word "json" is
+  // present in the INPUT itself — the instructions channel does not satisfy it
+  // (observed: 400 "input messages must contain the word 'json'"). So the JSON
+  // directive is appended to the input, AFTER the closing delimiter, where it is
+  // trusted text outside the untrusted block and cannot be smuggled into by the
+  // item. Strict structured-output mode (zodTextFormat) needs no such directive.
+  const input = hasOptionalFields
+    ? `${req.delimitedItem}\n\nReturn one JSON value that matches the requested evidence contract.`
+    : req.delimitedItem;
 
   const response = await client.responses.create(
     {
       model: req.model,
       instructions,
-      input: req.delimitedItem,
+      input,
       text: { format },
     },
     { signal: req.signal },

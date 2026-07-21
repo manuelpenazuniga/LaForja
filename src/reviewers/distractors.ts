@@ -10,9 +10,17 @@
  *
  * OWNER split: Claude owns the prompt template. Codex owns `reviewDistractors`.
  */
+import { z } from 'zod';
 import { GUARDRAIL_PREAMBLE, DELIMITER_NOTE } from './guardrails';
 import { DistractorMapSchema, type DistractorMap } from './schemas';
 import { callModel } from '../openai/client';
+
+// OpenAI structured output (and json_object mode) requires a JSON OBJECT at the
+// root — a bare array is rejected. The public contract is still the array
+// (DistractorMapSchema); we wrap it under a single `findings` key only for the
+// wire, and unwrap it below. The array's validation — non-empty, unique keys,
+// per-entry rules — is unchanged, since DistractorMapSchema is nested verbatim.
+const DistractorEnvelopeSchema = z.object({ findings: DistractorMapSchema });
 
 export const DISTRACTOR_PROMPT_VERSION = 'distractor-v2';
 
@@ -23,10 +31,11 @@ export const DISTRACTOR_SYSTEM = [
   'TASK: For EACH distractor worth reporting, hypothesize the misconception it is',
   'meant to capture and judge whether it actually plausibly captures it.',
   '',
-  'Return a JSON ARRAY: one entry per distractor you analyzed. Do not merge two',
-  'options into one entry, and do not report the same option twice — if you have',
-  'two competing hypotheses for one option, report the stronger one, with the',
-  'confidence you actually have in it.',
+  'Return a JSON object with a single key "findings" whose value is an ARRAY:',
+  'one entry per distractor you analyzed. Do not merge two options into one entry,',
+  'and do not report the same option twice — if you have two competing hypotheses',
+  'for one option, report the stronger one, with the confidence you actually have',
+  'in it.',
   '',
   'Fill the contract for EVERY entry:',
   '- distractor: the option (key or text) this entry is about.',
@@ -59,14 +68,15 @@ export async function reviewDistractors(
   delimitedItem: string,
   model: string,
 ): Promise<DistractorMap> {
-  const result = await callModel<DistractorMap>({
+  const result = await callModel<z.infer<typeof DistractorEnvelopeSchema>>({
     model,
     system: DISTRACTOR_SYSTEM,
     delimitedItem,
-    schema: DistractorMapSchema,
+    schema: DistractorEnvelopeSchema,
     promptVersion: DISTRACTOR_PROMPT_VERSION,
     callSite: 'orchestrator',
     reviewerType: 'distractor',
   });
-  return result.data;
+  // Unwrap to the public contract: the orchestrator still sees the array.
+  return result.data.findings;
 }
