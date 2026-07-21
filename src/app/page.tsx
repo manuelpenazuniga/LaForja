@@ -24,8 +24,9 @@ export const dynamic = 'force-dynamic';
  * reading "a specific child is a boy" yields 1/2. Two readings, two answers.
  *
  * This literal is the render fallback only. TODO(codex): replace it with a real
- * read of the seeded demo item (prisma via src/db/client.ts, or GET /api/session)
- * so the page always renders the row that the rest of the run writes against.
+ * read of the seeded demo item (prisma via src/db/client.ts, or POST /api/session
+ * — session creation is a POST, there is no GET on that route) so the page always
+ * renders the row that the rest of the run writes against.
  */
 const DEMO_FIXTURE: StudioItem = {
   id: 'demo-local',

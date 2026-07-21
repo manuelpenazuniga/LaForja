@@ -70,9 +70,9 @@ model Item {
 
 // Immutable snapshot of item content. Repair = new version (doc §5).
 model ItemVersion {
-  id              String  @id @default(cuid())
+  id              String @id @default(cuid())
   itemId          String
-  item            Item    @relation("ItemVersions", fields: [itemId], references: [id])
+  item            Item   @relation("ItemVersions", fields: [itemId], references: [id])
   versionNumber   Int // 1, 2, ...
   stem            String // UNTRUSTED input (hard constraint 1) — always delimited in prompts
   optionsJson     String // JSON string[] of alternatives
@@ -89,14 +89,14 @@ model ItemVersion {
   immutable Boolean  @default(false) // true once PUBLISHED
   createdAt DateTime @default(now())
 
-  checks           Check[]
-  historyReRuns    HistoryReRun[]
-  historyRunBatch  HistoryRunBatch[]
-  defense          Defense?
-  gauntletRuns     GauntletRun[]
-  passports        Passport[]
-  modelCalls       ModelCall[]
-  currentOfItem    Item?             @relation("ItemCurrentVersion")
+  checks          Check[]
+  historyReRuns   HistoryReRun[]
+  historyRunBatch HistoryRunBatch[]
+  defense         Defense?
+  gauntletRuns    GauntletRun[]
+  passports       Passport[]
+  modelCalls      ModelCall[]
+  currentOfItem   Item?             @relation("ItemCurrentVersion")
 
   @@unique([itemId, versionNumber])
 }
@@ -134,23 +134,47 @@ model GauntletRun {
 
 // Every reviewer/probe finding is a class-tagged check (doc §5).
 model Check {
-  id            String         @id @default(cuid())
-  itemVersionId String
-  itemVersion   ItemVersion    @relation(fields: [itemVersionId], references: [id])
-  gauntletRunId String?
-  gauntletRun   GauntletRun?   @relation(fields: [gauntletRunId], references: [id])
-  reviewerType  String // ambiguity | discipline | distractor | item_probe
-  checkClass    String // deterministic | counterexample | semantic
-  status        String         @default("proposed") // proposed|accepted|rejected|abstained|hypothesis
-  schemaValid   Boolean        @default(false)
-  contractJson  String // JSON evidence-contract payload (per reviewer, doc §6.2)
-  citationId    String? // discipline findings only
-  citation      Citation?      @relation(fields: [citationId], references: [id])
-  createdAt     DateTime       @default(now())
-  reRuns        HistoryReRun[] @relation("CheckReRuns")
+  id               String       @id @default(cuid())
+  itemVersionId    String
+  itemVersion      ItemVersion  @relation(fields: [itemVersionId], references: [id])
+  gauntletRunId    String?
+  gauntletRun      GauntletRun? @relation(fields: [gauntletRunId], references: [id])
+  reviewerType     String // ambiguity | discipline | distractor | item_probe
+  // HOW the finding was verified: solver | citation | heuristic | interpretation.
+  // Reviewer type alone does NOT fix the class — the discipline reviewer yields a
+  // solver-grounded numeric verdict (deterministic) AND a source-grounded
+  // conceptual one (semantic). The pair (reviewerType, verificationKind) fixes it,
+  // via CHECK_CLASS_BY_VERIFICATION in src/core/checks.ts. Assigned by the
+  // adjudication stage, which is what decides a finding's class and status.
+  verificationKind String
+  checkClass       String // deterministic | counterexample | semantic
+  status           String       @default("proposed") // proposed|accepted|rejected|abstained|hypothesis
+  schemaValid      Boolean      @default(false)
+  contractJson     String // JSON evidence-contract payload (per reviewer, doc §6.2)
+
+  // RE-EXECUTION IDENTITY (doc §5). Populated for the deterministic and
+  // counterexample classes; NULL for semantic, which has no executor to name.
+  // Without these, "strict non-regression" is unverifiable: there is no way to
+  // prove the thing re-run on v2 is the thing that failed on v1. Nullable here
+  // only because SQLite cannot express "required when checkClass != semantic" —
+  // RecordedCheckRowSchema (src/core/checks.ts) enforces that at the boundary,
+  // in BOTH directions (reject on write, reject on rebuild).
+  invariantId      String? // stable id of the executable check, e.g. "solver_key_matches"
+  executorVersion  String? // solver/probe version that produced the recorded result
+  thresholdVersion String? // threshold table in force when it was recorded
+
+  citationId String? // discipline findings only
+  citation   Citation?      @relation(fields: [citationId], references: [id])
+  createdAt  DateTime       @default(now())
+  reRuns     HistoryReRun[] @relation("CheckReRuns")
 
   @@index([itemVersionId, status])
   @@index([gauntletRunId])
+  // The re-run engine resolves an executor by invariantId, and retiring or
+  // bumping an invariant means sweeping every check recorded against it. Both
+  // are invariantId-keyed lookups across items, which the composite indexes
+  // above (rooted at itemVersionId/gauntletRunId) cannot serve.
+  @@index([invariantId])
 }
 
 // Full citation required for a discipline "correct" verdict (doc §6.2).

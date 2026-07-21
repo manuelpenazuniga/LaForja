@@ -9,7 +9,7 @@
  */
 import { GUARDRAIL_PREAMBLE, DELIMITER_NOTE } from './guardrails';
 import { AmbiguitySchema, type Ambiguity } from './schemas';
-import { callModel, delimitItem } from '../openai/client';
+import { callModel } from '../openai/client';
 
 export const AMBIGUITY_PROMPT_VERSION = 'ambiguity-v1';
 
@@ -31,17 +31,20 @@ export const AMBIGUITY_SYSTEM = [
 
 /**
  * TODO(codex): implement the ambiguity reviewer call.
- *  - system = AMBIGUITY_SYSTEM; user payload = delimitItem(rawItemText).
+ *  - system = AMBIGUITY_SYSTEM; user payload = `delimitedItem` AS GIVEN. It is
+ *    ALREADY wrapped by the orchestrator (`toDelimitedItem`); do NOT call
+ *    delimitItem on it here — wrapping twice nests the delimiters and breaks the
+ *    untrusted-input boundary (hard constraint 1).
  *  - schema = AmbiguitySchema (rejects answer_a === answer_b).
  *  - return the parsed contract; the orchestrator maps it to a Check
  *    (reviewerType='ambiguity', checkClass='counterexample').
  * Reference: doc §6.2, §7.1.
  */
-export async function reviewAmbiguity(rawItemText: string, model: string): Promise<Ambiguity> {
+export async function reviewAmbiguity(delimitedItem: string, model: string): Promise<Ambiguity> {
   const result = await callModel<Ambiguity>({
     model,
     system: AMBIGUITY_SYSTEM,
-    delimitedItem: delimitItem(rawItemText),
+    delimitedItem,
     schema: AmbiguitySchema,
     promptVersion: AMBIGUITY_PROMPT_VERSION,
     callSite: 'orchestrator',

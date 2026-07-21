@@ -18,6 +18,25 @@
  *   02 gauntlet lanes              06 written defense + rubric
  *   03 accepted counterexample     07 item passport
  *   04 repair v1 -> v2 + diff
+ *
+ * THE ROUTES ARE THE SOURCE OF TRUTH. Exactly five exist, and the stubs below
+ * call these and nothing else:
+ *   POST /api/session            -> loadDemoChallenge
+ *   POST /api/gauntlet           -> runGauntlet        (ndjson stream)
+ *   POST /api/repair             -> submitRepair       (slice elements 4 AND 5)
+ *   POST /api/defense            -> startDefense + submitDefense (two phases,
+ *                                   selected by the presence of `answers`)
+ *   GET  /api/passport/[itemId]  -> loadPassport       (path segment, not ?itemId)
+ *
+ * Do NOT add a standalone re-run endpoint, and do NOT split the defense route
+ * into question/score sub-routes. Screen 05 is fed by the `reRun` payload the
+ * repair route already returns — a second re-run call would execute the whole
+ * history twice and write duplicate HistoryReRun rows. Inventing a route also
+ * bypasses the doc §10 isolation envelope (session resolution, rate limit,
+ * input size caps, Zod validation) that the five routes above implement.
+ *
+ * tests/studioRoutes.test.ts enforces this: every /api path named in this file
+ * must resolve to a route.ts on disk.
  */
 
 import { useCallback, useMemo, useRef, useState, type CSSProperties } from 'react';
@@ -98,14 +117,26 @@ export interface GauntletResult {
   event: Extract<StateEvent, 'CHECKS_ACCEPTED' | 'GAUNTLET_CLEAN'>;
 }
 
+/**
+ * The FULL response of POST /api/repair. The history re-run happens inside that
+ * same request, so its payload arrives here — there is no second endpoint and no
+ * second execution of the history.
+ */
 export interface RepairResult {
   itemId: string;
+  newVersionId: string;
   versionNumber: number;
-}
-
-export interface HistoryReRunResult {
-  outcomes: ReRunOutcome[];
-  event: Extract<StateEvent, 'HISTORY_CLEAN' | 'HISTORY_REGRESSED'>;
+  /** Recorded diff vs the previous version, as the route computed it. */
+  diff: string | null;
+  reRun: {
+    /** Every class key is always present, so the UI never guards on undefined. */
+    byClass: Record<CheckClass, ReRunOutcome[]>;
+    /** true when a deterministic/counterexample check regressed: no publish. */
+    blocksPublish: boolean;
+    total: number;
+  };
+  /** Item state AFTER the server dispatched the re-run transition. */
+  state: ItemState;
 }
 
 export interface DefenseQuestion {
@@ -113,8 +144,20 @@ export interface DefenseQuestion {
   prompt: string;
 }
 
+/**
+ * The `phase: 'scored'` response of POST /api/defense.
+ *
+ * `rubric` is nullable because an evaluator failure is a normal 200 with
+ * outcome 'inconclusive' and no rubric — never an error and never an auto-reject
+ * (doc §6.3). Making it non-nullable would leave the DEFENSE_EVALUATOR_FAILED
+ * case unrepresentable by this very type.
+ */
 export interface DefenseResult {
-  rubric: DefenseRubric;
+  rubric: DefenseRubric | null;
+  outcome: 'passed' | 'failed' | 'inconclusive';
+  /** Item state AFTER the server dispatched the defense transition. */
+  state: ItemState;
+  /** Derived from `outcome` by the stub; the route sends outcome + state. */
   event: Extract<
     StateEvent,
     'DEFENSE_PASSED' | 'DEFENSE_FAILED' | 'DEFENSE_EVALUATOR_FAILED'
@@ -187,54 +230,69 @@ const api = {
   },
 
   /**
-   * TODO(codex): POST /api/repair — create a NEW ItemVersion from the draft
-   * (published versions are immutable; a repair is never a mutation) and return
-   * its version number. Validate the body with Zod and enforce the input size
-   * limits of doc §10.
+   * TODO(codex): POST /api/repair with
+   * `{ itemId, stem, options, correctKey, authorRationale }` (the route's
+   * RepairRequestSchema is `.strict()` — do not send the draft object verbatim
+   * under a `draft` key, and do not send a versionNumber; the server derives it).
+   *
+   * ONE request does the whole of slice elements 4 AND 5. The route creates the
+   * NEW ItemVersion (published versions are immutable; a repair is never a
+   * mutation), then re-runs the FULL recorded check history against it via
+   * reRunHistory(), persists a HistoryReRun row per outcome, and dispatches
+   * SUBMIT_REPAIR followed by HISTORY_REGRESSED / HISTORY_CLEAN server-side.
+   *
+   * There is NO separate re-run endpoint. Calling one would re-execute the whole
+   * history a second time and write duplicate HistoryReRun rows.
+   *
+   * Return the route's body unchanged: `{ itemId, newVersionId, versionNumber,
+   * diff, reRun: { byClass, blocksPublish, total }, state }`. Zod-validate it
+   * before returning.
    */
   async submitRepair(_itemId: string, _draft: ItemDraft): Promise<RepairResult> {
     throw new Error('POST /api/repair is not wired yet');
   },
 
   /**
-   * TODO(codex): POST /api/rerun — re-run the FULL recorded check history against
-   * the new version via reRunHistory() (src/core/checks.ts) and return the
-   * per-check outcomes plus the transition event (HISTORY_REGRESSED when any
-   * deterministic or counterexample check regressed, else HISTORY_CLEAN).
-   */
-  async reRunHistory(_itemId: string, _versionNumber: number): Promise<HistoryReRunResult> {
-    throw new Error('POST /api/rerun is not wired yet');
-  },
-
-  /**
-   * TODO(codex): POST /api/defense/questions — generateDefenseQuestions()
-   * (src/defense/viva.ts) grounded in the accepted findings. Exactly 2 questions,
-   * validated with DefenseQuestionsSchema.
+   * TODO(codex): POST /api/defense with `{ itemId }` and NO `answers` key — that
+   * absence is what selects the questions phase of this two-phase endpoint.
+   *
+   * Server side: generateDefenseQuestions() (src/defense/viva.ts) grounded in the
+   * accepted findings, validated with DefenseQuestionsSchema. The response is
+   * `{ phase: 'questions', itemId, itemVersionId, questions, state }`; return
+   * `questions`, which is exactly 2 entries.
    */
   async startDefense(_itemId: string): Promise<DefenseQuestion[]> {
-    throw new Error('POST /api/defense/questions is not wired yet');
+    throw new Error('POST /api/defense is not wired yet');
   },
 
   /**
-   * TODO(codex): POST /api/defense/score — scoreDefense() against the 3-dimension
-   * rubric (0-2 + textual evidence each). Return the rubric and the event:
-   * DEFENSE_PASSED when meetsPublishThreshold(), DEFENSE_FAILED when it does not,
-   * DEFENSE_EVALUATOR_FAILED when the evaluator call itself failed after the retry
-   * (never an auto-reject, doc §6.3).
+   * TODO(codex): POST /api/defense with `{ itemId, answers }` — the SAME endpoint
+   * as startDefense; the presence of `answers` selects the scoring phase.
+   *
+   * `answers` is a positional ARRAY of exactly 2 non-empty strings, ordered to
+   * match the questions (the route schema is
+   * `z.array(z.string().min(1)).length(2)`). It is not a map keyed by question id.
+   *
+   * Server side: scoreDefense() against the 3-dimension rubric (0-2 + textual
+   * evidence each). The response is `{ phase: 'scored', rubric, outcome, state }`.
+   * Map `outcome` onto the transition event for the reducer:
+   *   'passed'       -> DEFENSE_PASSED
+   *   'failed'       -> DEFENSE_FAILED
+   *   'inconclusive' -> DEFENSE_EVALUATOR_FAILED
+   * An evaluator failure arrives as a 200 with outcome 'inconclusive' and
+   * `rubric: null` — never an error, never an auto-reject (doc §6.3).
    */
-  async submitDefense(
-    _itemId: string,
-    _answers: Record<string, string>,
-  ): Promise<DefenseResult> {
-    throw new Error('POST /api/defense/score is not wired yet');
+  async submitDefense(_itemId: string, _answers: string[]): Promise<DefenseResult> {
+    throw new Error('POST /api/defense is not wired yet');
   },
 
   /**
-   * TODO(codex): GET /api/passport?itemId=… — buildPassport()
-   * (src/passport/passport.ts). Returns the frozen item-level snapshot.
+   * TODO(codex): GET /api/passport/${itemId} — a path segment, not a query
+   * string. Server side: buildPassport() (src/passport/passport.ts). Returns the
+   * frozen item-level snapshot; Zod-validate it before returning.
    */
   async loadPassport(_itemId: string): Promise<Passport> {
-    throw new Error('GET /api/passport is not wired yet');
+    throw new Error('GET /api/passport/[itemId] is not wired yet');
   },
 };
 
@@ -471,10 +529,12 @@ export default function StudioClient({
   const [lanes, setLanes] = useState<LaneMap>(emptyLaneMap);
   const [checks, setChecks] = useState<AdjudicatedCheckView[]>([]);
   const [abstained, setAbstained] = useState<number>(0);
-  const [reRun, setReRun] = useState<ReRunOutcome[]>([]);
+  // Grouped by class exactly as /api/repair returns it: every class key present.
+  const [reRunByClass, setReRunByClass] = useState<Record<CheckClass, ReRunOutcome[]> | null>(null);
 
   const [questions, setQuestions] = useState<DefenseQuestion[]>([]);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  // Positional, to match the route's `z.array(z.string().min(1)).length(2)`.
+  const [answers, setAnswers] = useState<string[]>([]);
   const [rubric, setRubric] = useState<DefenseRubric | null>(null);
   const [passport, setPassport] = useState<Passport | null>(null);
 
@@ -601,15 +661,20 @@ export default function StudioClient({
     setBusy('repair');
     setNotice(null);
     try {
+      // ONE request: /api/repair creates the new version AND re-runs the full
+      // check history. There is no second call — a separate re-run endpoint
+      // would execute the history twice and duplicate its recorded rows.
       const repair = await api.submitRepair(item.id, draft);
       const repaired: StudioItem = { ...draft, id: repair.itemId, versionNumber: repair.versionNumber };
       setPreviousVersion(item);
       setItem(repaired);
-      if (!applyEvent('SUBMIT_REPAIR')) return;
+      setReRunByClass(repair.reRun.byClass);
 
-      const history = await api.reRunHistory(repair.itemId, repair.versionNumber);
-      setReRun(history.outcomes);
-      applyEvent(history.event);
+      // Both transitions are applied back to back with NO await between them:
+      // the re-run payload already arrived with the repair response, so there is
+      // no window in which the item can be left stuck in REGRESSION.
+      if (!applyEvent('SUBMIT_REPAIR')) return;
+      applyEvent(repair.reRun.blocksPublish ? 'HISTORY_REGRESSED' : 'HISTORY_CLEAN');
     } catch (err) {
       setNotice({
         tone: 'warn',
@@ -628,7 +693,7 @@ export default function StudioClient({
     try {
       const next = await api.startDefense(item.id);
       setQuestions(next);
-      setAnswers({});
+      setAnswers(next.map(() => ''));
       setRubric(null);
     } catch (err) {
       setNotice({
@@ -646,7 +711,9 @@ export default function StudioClient({
     setBusy('defense-score');
     setNotice(null);
     try {
+      // Positional array, ordered to match `questions`.
       const result = await api.submitDefense(item.id, answers);
+      // null on an evaluator failure; the rubric card renders its empty state.
       setRubric(result.rubric);
       const next = applyEvent(result.event);
       if (next === 'PUBLISHED') {
@@ -696,6 +763,17 @@ export default function StudioClient({
     }
     return null;
   }, [acceptedChecks]);
+
+  // The route requires exactly 2 non-empty answers
+  // (`z.array(z.string().min(1)).length(2)`), so an incomplete defense is
+  // blocked here instead of being sent to a guaranteed 400.
+  const answersComplete = useMemo(
+    () =>
+      questions.length > 0 &&
+      answers.length === questions.length &&
+      answers.every((answer) => answer.trim().length > 0),
+    [answers, questions.length],
+  );
 
   const formEditable = state === 'DRAFT' && item !== null;
   // CHALLENGED only. DISPUTED is deliberately excluded: post-publication disputes
@@ -1121,7 +1199,7 @@ export default function StudioClient({
                 </button>
                 <span className="btn-note">
                   Submitting is designed to create a new version and re-run the full check
-                  history. Both are next.
+                  history in that same request. Both are next.
                 </span>
               </div>
             </div>
@@ -1139,7 +1217,7 @@ export default function StudioClient({
 
             <div className="panel__body classes">
               {(Object.keys(CLASS_PROMISE) as CheckClass[]).map((checkClass) => {
-                const outcomes = reRun.filter((outcome) => outcome.checkClass === checkClass);
+                const outcomes = reRunByClass?.[checkClass] ?? [];
                 const copy = CLASS_PROMISE[checkClass];
                 return (
                   <div className="class-group" data-class={checkClass} key={checkClass}>
@@ -1223,11 +1301,15 @@ export default function StudioClient({
                         <p className="question__prompt">{question.prompt}</p>
                         <textarea
                           className="textarea"
-                          value={answers[question.id] ?? ''}
+                          value={answers[index] ?? ''}
                           disabled={state !== 'DEFENSE'}
                           placeholder="Write your answer"
                           onChange={(event) =>
-                            setAnswers((prev) => ({ ...prev, [question.id]: event.target.value }))
+                            setAnswers((prev) => {
+                              const next = [...prev];
+                              next[index] = event.target.value;
+                              return next;
+                            })
                           }
                           aria-label={`Answer to question ${index + 1}`}
                         />
@@ -1238,7 +1320,7 @@ export default function StudioClient({
                         type="button"
                         className="btn btn--forge"
                         onClick={() => void handleSubmitDefense()}
-                        disabled={busy !== null || state !== 'DEFENSE'}
+                        disabled={busy !== null || state !== 'DEFENSE' || !answersComplete}
                       >
                         {busy === 'defense-score' ? 'Scoring…' : 'Submit defense'}
                       </button>

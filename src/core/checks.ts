@@ -26,7 +26,9 @@
  * INCONCLUSIVE re-run of a deterministic or counterexample check BLOCKS
  * publication. "We could not verify it" is never treated as "it passed".
  */
-import type { CheckClass, ReviewerType } from './types';
+import { z } from 'zod';
+import { CHECK_STATUS, REVIEWER_TYPES, VERIFICATION_KINDS } from './types';
+import type { CheckClass, ReviewerType, VerificationKind } from './types';
 
 // ---------------------------------------------------------------------------
 // How a check is verified. Reviewer type ALONE cannot determine the class:
@@ -34,14 +36,13 @@ import type { CheckClass, ReviewerType } from './types';
 // deterministic and re-executable) AND a source-grounded conceptual verdict
 // (which is a semantic judgment). The pair (reviewerType, verificationKind) is
 // what fixes the class.
+//
+// The allowed values are OWNED by src/core/types.ts (the single source of truth
+// for every String column in prisma/schema.prisma) and re-exported here so the
+// taxonomy and its map read as one unit.
 // ---------------------------------------------------------------------------
-export const VERIFICATION_KINDS = [
-  'solver', // recomputed by the bounded solver (src/solver) — reproducible
-  'citation', // grounded on a licensed source excerpt — judged, not computed
-  'heuristic', // fixed-threshold code check (src/probe) — reproducible
-  'interpretation', // a natural-language reading applied to the stem — judged
-] as const;
-export type VerificationKind = (typeof VERIFICATION_KINDS)[number];
+export { VERIFICATION_KINDS };
+export type { VerificationKind };
 
 /**
  * The (reviewerType, verificationKind) -> CheckClass assignment, encoded ONCE.
@@ -82,6 +83,26 @@ export const CHECK_CLASS_BY_VERIFICATION: Readonly<
 
 // ---------------------------------------------------------------------------
 // Recorded checks
+//
+// ONE SHAPE, THREE PLACES. A recorded check is produced by adjudication
+// (AdjudicatedCheck, src/reviewers/adjudication.ts), persisted as a `Check` row
+// (prisma/schema.prisma) and re-executed from that row as a RecordedCheck here.
+// The three must line up field for field or the history re-run cannot rebuild
+// what it is supposed to re-execute:
+//
+//   AdjudicatedCheck        Check column          RecordedCheck
+//   ----------------------  --------------------  ------------------------
+//   reviewerType            reviewerType          reviewerType
+//   verificationKind        verificationKind      verificationKind
+//   checkClass              checkClass            checkClass
+//   invariantId?            invariantId?          invariantId (executable only)
+//   executorVersion?        executorVersion?      executorVersion (exec. only)
+//   thresholdVersion?       thresholdVersion?     thresholdVersion (exec. only)
+//   contract                contractJson          contract
+//
+// The nullable Prisma columns are nullable ONLY because the semantic class has
+// no executor to identify; `RecordedCheckRowSchema` below is what forbids a
+// deterministic or counterexample row from ever being persisted without them.
 // ---------------------------------------------------------------------------
 
 interface RecordedCheckBase {
@@ -112,12 +133,111 @@ export interface ExecutableRecordedCheck extends RecordedCheckBase {
   thresholdVersion: string;
 }
 
-/** A judgment. Re-adjudicated on every version; never a hard guarantee. */
+/**
+ * A judgment. Re-adjudicated on every version; never a hard guarantee.
+ *
+ * There is no executor to identify, so the three identity fields are absent
+ * rather than empty: a semantic check carrying an `invariantId` would claim a
+ * re-executability the class does not have.
+ */
 export interface SemanticRecordedCheck extends RecordedCheckBase {
   checkClass: 'semantic';
+  invariantId?: never;
+  executorVersion?: never;
+  thresholdVersion?: never;
 }
 
 export type RecordedCheck = ExecutableRecordedCheck | SemanticRecordedCheck;
+
+// ---------------------------------------------------------------------------
+// Persistence boundary (Claude-owned)
+// ---------------------------------------------------------------------------
+
+/**
+ * Zod validation for a `Check` row, applied on the way IN (adjudication ->
+ * Prisma) and on the way OUT (Prisma -> reRunCheck). SQLite has no enums and no
+ * conditional constraints, so every rule the schema cannot express is enforced
+ * here — this schema is the reason the String columns are safe:
+ *
+ *  1. reviewerType / verificationKind / checkClass / status are restricted to
+ *     the value sets owned by src/core/types.ts.
+ *  2. `checkClass` MUST equal CHECK_CLASS_BY_VERIFICATION[reviewerType]
+ *     [verificationKind]. A `null` entry is an illegal combination and is
+ *     REJECTED, never silently downgraded to 'semantic' (doc §5).
+ *  3. deterministic / counterexample rows MUST carry invariantId,
+ *     executorVersion and thresholdVersion — without them "strict
+ *     non-regression" is unverifiable, because there is no way to prove the
+ *     thing re-run on v2 is the thing that failed on v1.
+ *  4. semantic rows MUST NOT carry them.
+ *
+ * Rejecting at this boundary is deliberate: a malformed row that reaches
+ * reRunCheck can only produce 'inconclusive', which fail-closed turns into a
+ * permanently unpublishable item with no explanation.
+ */
+export const RecordedCheckRowSchema = z
+  .object({
+    id: z.string().min(1),
+    reviewerType: z.enum(REVIEWER_TYPES),
+    verificationKind: z.enum(VERIFICATION_KINDS),
+    checkClass: z.enum(['deterministic', 'counterexample', 'semantic']),
+    status: z.enum(CHECK_STATUS),
+    invariantId: z.string().trim().min(1).nullable().optional(),
+    executorVersion: z.string().trim().min(1).nullable().optional(),
+    thresholdVersion: z.string().trim().min(1).nullable().optional(),
+  })
+  .superRefine((row, ctx) => {
+    const expected = CHECK_CLASS_BY_VERIFICATION[row.reviewerType][row.verificationKind];
+    if (expected === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `illegal combination: reviewer '${row.reviewerType}' never produces a '${row.verificationKind}' verdict`,
+        path: ['verificationKind'],
+      });
+      return;
+    }
+    if (row.checkClass !== expected) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `checkClass must be '${expected}' for (${row.reviewerType}, ${row.verificationKind})`,
+        path: ['checkClass'],
+      });
+    }
+
+    const executable = expected === 'deterministic' || expected === 'counterexample';
+    for (const field of ['invariantId', 'executorVersion', 'thresholdVersion'] as const) {
+      const value = row[field];
+      if (executable && (value === null || value === undefined)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${field} is required for a re-executable ${expected} check`,
+          path: [field],
+        });
+      }
+      if (!executable && value !== null && value !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${field} must be null on a semantic check: there is no executor to identify`,
+          path: [field],
+        });
+      }
+    }
+  });
+export type RecordedCheckRow = z.infer<typeof RecordedCheckRowSchema>;
+
+/** The class implied by a (reviewerType, verificationKind) pair; null = illegal. */
+export function checkClassFor(
+  reviewerType: ReviewerType,
+  verificationKind: VerificationKind,
+): CheckClass | null {
+  return CHECK_CLASS_BY_VERIFICATION[reviewerType][verificationKind];
+}
+
+/** Only these two classes are re-EXECUTED; 'semantic' is re-adjudicated. */
+export function isExecutableClass(
+  checkClass: CheckClass,
+): checkClass is 'deterministic' | 'counterexample' {
+  return checkClass === 'deterministic' || checkClass === 'counterexample';
+}
 
 // ---------------------------------------------------------------------------
 // Re-run outcomes
@@ -235,10 +355,14 @@ export interface HistoryRunBatch {
  * re-run returns a CONCLUSIVE 'pass'. An inconclusive re-run must never fail
  * open. Semantic outcomes always set `blocksPublish = false`.
  *
- * The class is NOT re-derived here: it is fixed at recording time by
- * CHECK_CLASS_BY_VERIFICATION[reviewerType][verificationKind], and a check
- * whose stored class disagrees with that map is a recording bug ⇒ reject it,
- * do not re-run it.
+ * The class is NOT re-derived here: it is ASSIGNED by adjudication (see
+ * AdjudicatedCheck in src/reviewers/adjudication.ts), persisted on the `Check`
+ * row, and must equal CHECK_CLASS_BY_VERIFICATION[reviewerType]
+ * [verificationKind]. Rebuild the RecordedCheck from the row through
+ * `RecordedCheckRowSchema` FIRST: a row that fails it (illegal combination,
+ * class disagreeing with the map, an executable class missing invariantId /
+ * executorVersion / thresholdVersion) is a recording bug ⇒ reject it with a
+ * readable error, do not re-run it and do not treat it as 'inconclusive'.
  *
  * Reference: doc §5, gate §13.3 (the exact check that broke v1 and passes v2).
  */

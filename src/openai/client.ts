@@ -21,8 +21,61 @@ import { isCompliantModel } from '../config/models';
 export const ITEM_OPEN = '<<<UNTRUSTED_ITEM>>>';
 export const ITEM_CLOSE = '<<<END_UNTRUSTED_ITEM>>>';
 
+/** What a delimiter token is replaced by when it appears inside item text. */
+export const DELIMITER_REPLACEMENT = '[delimiter token removed]';
+
+/**
+ * Anything delimiter-SHAPED, not just the two exact tokens: extra angle
+ * brackets, a closing slash, lower case, spacing, `END-` instead of `END_`.
+ * A student pasting the real token is the expected case; an attacker probing
+ * with near-misses is the reason this is a shape and not two string literals.
+ */
+const DELIMITER_SHAPED = /<{2,}\s*\/?\s*(?:END[_\s-]*)?UNTRUSTED[_\s-]*ITEM\s*>{2,}/gi;
+
+/**
+ * Strips every delimiter token from untrusted text.
+ *
+ * Exported so tests can assert the guarantee directly, and so a future caller
+ * that builds its own payload cannot forget it.
+ */
+export function stripDelimiters(rawItemText: string): string {
+  return rawItemText
+    .replace(DELIMITER_SHAPED, DELIMITER_REPLACEMENT)
+    // Belt and braces. Whatever the shape regex above may have missed, the two
+    // EXACT tokens can never survive this, and it is the exact tokens that the
+    // system prompt tells the model to trust as the boundary.
+    .split(ITEM_OPEN)
+    .join(DELIMITER_REPLACEMENT)
+    .split(ITEM_CLOSE)
+    .join(DELIMITER_REPLACEMENT);
+}
+
+/**
+ * Wraps UNTRUSTED item text in the boundary the reviewer prompts describe
+ * (hard constraint 1).
+ *
+ * TOTAL BY CONSTRUCTION. The payload is stripped of delimiter tokens BEFORE it
+ * is wrapped, so the returned string always contains exactly one ITEM_OPEN (at
+ * offset 0) and exactly one ITEM_CLOSE (at the end). A stem containing the
+ * literal close token therefore cannot terminate the block early and have the
+ * remainder read as trusted instruction — which is the single most obvious way
+ * to attack a delimiter scheme, and a copy-paste away.
+ *
+ * NOT sanitization of the item's MEANING: "ignore previous instructions" is
+ * passed through verbatim, because the reviewers must see exactly what the
+ * student wrote and the guardrail preamble already tells the model to treat the
+ * block as data. Only the boundary tokens themselves are neutralized.
+ *
+ * WHY NO PER-CALL NONCE: a random suffix would make the token unpredictable,
+ * but it only helps if a token can leak through in the first place — and after
+ * the strip above none can. A nonce would also desynchronize the exported
+ * constants from the prompt text that names them (see DELIMITER_NOTE in
+ * src/reviewers/guardrails.ts) and make prompt hashes unstable per call, which
+ * hard constraint 3 logs for auditability. A deterministic, provable strip beats
+ * an unpredictable token here.
+ */
 export function delimitItem(rawItemText: string): string {
-  return `${ITEM_OPEN}\n${rawItemText}\n${ITEM_CLOSE}`;
+  return `${ITEM_OPEN}\n${stripDelimiters(rawItemText)}\n${ITEM_CLOSE}`;
 }
 
 /** Stable hash of the exact system prompt sent, logged per call (constraint 3). */

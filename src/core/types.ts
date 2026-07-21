@@ -56,6 +56,29 @@ export const REVIEWER_TYPES = [
 ] as const;
 export type ReviewerType = (typeof REVIEWER_TYPES)[number];
 
+/**
+ * HOW a check was verified — the second half of the pair that fixes its class.
+ *
+ * Reviewer type ALONE cannot determine the class: the discipline reviewer
+ * produces a solver-grounded numeric verdict (deterministic, re-executable) AND
+ * a source-grounded conceptual verdict (a semantic judgment). The pair
+ * (reviewerType, verificationKind) is what fixes the class, and the mapping is
+ * encoded exactly once in CHECK_CLASS_BY_VERIFICATION (src/core/checks.ts).
+ *
+ * This is the allowed-value set for the `Check.verificationKind` String column.
+ * It is ASSIGNED by the adjudication stage (src/reviewers/adjudication.ts) —
+ * adjudication is what decides a finding's class and status, so it is the only
+ * stage that knows the kind — and Zod-validated at the persistence boundary by
+ * RecordedCheckRowSchema (src/core/checks.ts).
+ */
+export const VERIFICATION_KINDS = [
+  'solver', // recomputed by the bounded solver (src/solver) — reproducible
+  'citation', // grounded on a licensed source excerpt — judged, not computed
+  'heuristic', // fixed-threshold code check (src/probe) — reproducible
+  'interpretation', // a natural-language reading applied to the stem — judged
+] as const;
+export type VerificationKind = (typeof VERIFICATION_KINDS)[number];
+
 export const CHECK_STATUS = [
   'proposed',
   'accepted',

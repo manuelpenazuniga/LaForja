@@ -41,7 +41,7 @@ Concretely, as of this commit:
   model (`prisma/schema.prisma`, `prisma/seed.ts`), eval types and all 16 authored
   smoke fixtures (`src/eval/smoke/`), small pure helpers
   (`reduceFraction`, `meetsPublishThreshold`, `toJson`/`fromJson`), and the test
-  suite (207 passing, 101 skipped by design).
+  suite (285 passing, 101 skipped by design).
 - What is a **stub**: every runtime behavior. The reviewers, the orchestrator, the
   separate adjudication step, the bounded solver, the deterministic item probe, the
   state machine reducer, the history re-run, the defense scorer, the passport
@@ -254,7 +254,7 @@ grep -rn "TODO(codex)" src
 The test suite is the second half of that punch-list. Tests covering already-working
 code must pass; tests covering Codex-owned stubs are written out in full but marked
 `describe.skip` / `it.skip`, so CI stays green and Codex's job is to delete the
-`.skip`. The `tests/` directory exists and the suite runs green: **207 tests pass and
+`.skip`. The `tests/` directory exists and the suite runs green: **285 tests pass and
 101 are skipped** — those 101 skips are exactly the Codex punch-list.
 
 ## 7. Evals
@@ -315,7 +315,7 @@ Notes, so the commands are not oversold:
   page renders, but every action it offers is wired to a `TODO(codex)` stub, so the
   end-to-end flow is **next**. The API routes under `src/app/api/` exist as
   request/response scaffolding; their handler bodies are **next**.
-- `npm run test` runs the suite: 207 pass, 101 are intentionally `describe.skip` /
+- `npm run test` runs the suite: 285 pass, 101 are intentionally `describe.skip` /
   `it.skip` (the Codex punch-list). Those skipped bodies are written out in full.
 - `npm run secretscan` and the pre-commit hook wiring referenced by `prepare` exist
   (`scripts/secret-scan.mjs`, `.githooks/pre-commit`).

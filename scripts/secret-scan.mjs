@@ -37,7 +37,16 @@
  *   4. Placeholders are NOT caught (no false positive on the committed example):
  *        node scripts/secret-scan.mjs .env.example          # expect exit 0
  *
- *   5. A staged `.env` is caught by filename alone, before content matching.
+ *   5. A staged `.env` is caught TWICE: once by filename, and once for each
+ *      credential inside it. `.env` is git-ignored, so this only fires on a
+ *      force-add — which is precisely when a live key would slip through:
+ *        node -e 'const p="sk-";require("fs").mkdirSync("/tmp/forja-env",{recursive:true});
+ *          require("fs").writeFileSync("/tmp/forja-env/.env","OPENAI_API_KEY="+p+"a".repeat(40))'
+ *        node scripts/secret-scan.mjs /tmp/forja-env/.env   # expect exit 1, 2 findings
+ *
+ *      `.env.example` is the ONLY exempt basename, and it is exempt from the
+ *      FILENAME rule only — its contents are read and scanned like any other
+ *      file, with self-evident placeholders filtered out.
  *
  * Remember to delete the temp files afterwards.
  */
@@ -86,14 +95,27 @@ const SKIP_EXTENSIONS = new Set([
 ]);
 
 /**
- * Environment files that hold placeholders on purpose and must NEVER be flagged.
+ * The ONLY environment file exempt from the "env files must not be committed"
+ * filename rule — and only because it holds placeholders on purpose.
  * `.env.example` is the only environment file that is versioned (constraint 5).
+ *
+ * Deliberately NOT a broader set. `.env.sample` / `.env.template` are not part
+ * of this repo's contract, so a file with either name is treated like any other
+ * stray env file: flagged, and its contents scanned.
+ *
+ * NOTE the scope: being on this list exempts a file from the FILENAME rule only.
+ * Its contents are still scanned — see `scanFile`. An allowlist that skipped
+ * reading would be a hole big enough to drive a live key through.
  */
-const ALLOWLISTED_BASENAMES = new Set(['.env.example', '.env.sample', '.env.template']);
+const ALLOWLISTED_BASENAMES = new Set(['.env.example']);
 
 /**
  * True when the file is an environment file whose mere presence in a commit is
  * a finding: `.env`, `.env.local`, `.env.production.local`, and friends.
+ *
+ * These are all git-ignored, so in normal use this never fires — it exists to
+ * catch the one that gets `git add -f`-ed, which is exactly the case where a
+ * real credential reaches the index.
  */
 function isForbiddenEnvFile(basename) {
   if (ALLOWLISTED_BASENAMES.has(basename)) return false;
@@ -283,10 +305,12 @@ function scanFile(relPath) {
       ? path.join(REPO_ROOT, relPath)
       : path.resolve(process.cwd(), relPath);
   const basename = path.basename(relPath);
+  // Placeholder file: exempt from the filename rule and from content matches
+  // that are self-evidently placeholders — but still READ and still scanned, so
+  // a real key pasted into `.env.example` is caught like anywhere else.
+  const isPlaceholderFile = ALLOWLISTED_BASENAMES.has(basename);
 
-  if (ALLOWLISTED_BASENAMES.has(basename)) return findings;
-
-  if (isForbiddenEnvFile(basename)) {
+  if (!isPlaceholderFile && isForbiddenEnvFile(basename)) {
     findings.push({
       file: relPath,
       line: 0,
@@ -329,6 +353,10 @@ function scanFile(relPath) {
       }
       const value = rule.valueGroup ? match[rule.valueGroup] ?? match[0] : match[0];
       if (rule.valueGroup && PLACEHOLDER.test(value)) continue;
+      // In `.env.example` every value is supposed to be a placeholder, so an
+      // obvious one is not a finding for ANY rule. A value that does not look
+      // like a placeholder still is — that is the whole point of reading it.
+      if (isPlaceholderFile && PLACEHOLDER.test(value)) continue;
       const { line, column } = locate(content, match.index);
       findings.push({
         file: relPath,

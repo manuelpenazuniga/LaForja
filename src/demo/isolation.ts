@@ -10,7 +10,8 @@
  *  - a per-visitor session id in an httpOnly, SameSite=Lax cookie (no accounts),
  *  - auto-reset: an EXPIRED session is REPLACED, never resurrected,
  *  - input size limits for UNTRUSTED item text (hard constraint 1),
- *  - a sliding-window rate limiter keyed by session id,
+ *  - a sliding-window rate limiter keyed by CLIENT IP *and* by session id,
+ *  - a separate, tighter budget on session CREATION itself,
  *  - random pseudonyms (doc §6.4/§9).
  *
  * ZERO PII (hard constraint 8): there is no school, city, name, email or age
@@ -22,6 +23,50 @@
  * stable isolated public link"), which is exactly what this is sized for. A
  * multi-instance deployment would need a shared store; that is explicitly not
  * part of the slice.
+ *
+ * ---------------------------------------------------------------------------
+ * RATE LIMIT TRUST MODEL — read this before trusting the numbers
+ * ---------------------------------------------------------------------------
+ * The limiter runs on THREE keys, deliberately (defence in depth):
+ *
+ *   1. `ip:<addr>`     — every request, cookie or not. `ipRateLimitPerMinute`.
+ *   2. `new:<addr>`    — only requests that MINT a session. `sessionCreatePerMinute`.
+ *   3. `new:*`         — EVERY mint, whatever the address. `globalSessionCreatePerMinute`.
+ *   4. `sess:<id>`     — cookie-carrying traffic. `rateLimitPerMinute`.
+ *
+ * Key 4 alone is NOT a limiter: a session id is a client-controlled identifier
+ * and a caller that simply never sends a cookie gets a brand new id — and thus
+ * an empty window — on every single request. Keys 1-3 exist because of that;
+ * they are keyed on something the caller cannot mint at will.
+ *
+ * Key 3 is the backstop for key 2. Keys 1 and 2 are keyed on a SPOOFABLE header,
+ * so an attacker who rotates `X-Forwarded-For` on every request gets a fresh
+ * window for both — measured, not assumed. Key 3 is not keyed on anything the
+ * caller controls, so header rotation cannot move it. It bounds the harm that
+ * actually persists (Session ROWS written to the database) rather than the
+ * request volume, which is why it is a total across all addresses.
+ *
+ * WHAT THIS DOES NOT PROTECT AGAINST — stated plainly, not overclaimed:
+ *  - Forwarded headers are SPOOFABLE. `X-Forwarded-For` and friends are attacker
+ *    controlled unless a trusted proxy overwrites them. On the demo host (a single
+ *    instance behind one platform proxy) the left-most XFF entry is set by that
+ *    proxy and is good enough to stop casual spam; a determined attacker who can
+ *    forge the header can still rotate keys 1 and 2 freely. That means REQUEST
+ *    volume from a header-rotating attacker is NOT bounded — only session minting
+ *    is (key 3). This raises the cost of trolling; it is not a WAF.
+ *  - Key 3 is a shared ceiling, so an attacker who saturates it denies new
+ *    sessions to genuine visitors for the rest of the window. That is a
+ *    deliberate trade: existing cookie-carrying sessions keep working, and a
+ *    bounded, self-healing denial of NEW sessions beats an unbounded write
+ *    amplification against the demo database during judging.
+ *  - A Web `Request` exposes no socket, so there is no connection address to fall
+ *    back to inside a Next.js route handler. When no forwarded header is present
+ *    every caller collapses onto the single key `ip:unknown`. That FAILS CLOSED
+ *    (shared budget) rather than open, which is the right default for a demo but
+ *    means one noisy local client can rate-limit another on a header-less host.
+ *  - Distributed traffic from many real IPs is not stopped at all. Out of scope.
+ *  - Shared NAT (a classroom, a venue wifi) shares a bucket. That is why the
+ *    session-creation budget is per minute and generous rather than per hour.
  */
 import { z } from 'zod';
 import { prisma } from '../db/client';
@@ -41,8 +86,36 @@ export interface IsolationConfig {
   sessionTtlMinutes: number;
   /** Maximum characters accepted for any single UNTRUSTED text field. */
   maxInputChars: number;
-  /** Requests allowed per session per RATE_LIMIT_WINDOW_MS. */
+  /**
+   * Requests allowed per SESSION per RATE_LIMIT_WINDOW_MS. Defence in depth
+   * only — see the trust model in the module header: on its own this budget is
+   * bypassed by never sending a cookie.
+   */
   rateLimitPerMinute: number;
+  /**
+   * Requests allowed per CLIENT IP per RATE_LIMIT_WINDOW_MS, cookie or not.
+   * This is the budget that actually bounds an anonymous flood. Higher than the
+   * per-session budget so a few visitors behind one NAT still work.
+   */
+  ipRateLimitPerMinute: number;
+  /**
+   * Sessions a single CLIENT IP may MINT per RATE_LIMIT_WINDOW_MS. Much tighter
+   * than the request budget: normal use mints one session per visitor per TTL,
+   * so anything above a handful per minute is either a shared NAT or a troll.
+   */
+  sessionCreatePerMinute: number;
+  /**
+   * Sessions ALL callers together may mint per RATE_LIMIT_WINDOW_MS.
+   *
+   * The only budget in this file not keyed on something the caller can vary.
+   * `sessionCreatePerMinute` is keyed on a spoofable forwarded header, so an
+   * attacker who rotates that header per request gets an unlimited number of
+   * fresh windows and can write one Session row per request. This ceiling caps
+   * that at a fixed number of rows per minute regardless of how many addresses
+   * the attacker claims to be. Sized well above real demo traffic (one mint per
+   * visitor per TTL), so it should only ever be reached by abuse.
+   */
+  globalSessionCreatePerMinute: number;
 }
 
 function positiveInt(raw: string | undefined, fallback: number): number {
@@ -56,6 +129,9 @@ export function loadIsolationConfig(env: NodeJS.ProcessEnv = process.env): Isola
     sessionTtlMinutes: positiveInt(env.SESSION_TTL_MINUTES, 30),
     maxInputChars: positiveInt(env.MAX_INPUT_CHARS, 4000),
     rateLimitPerMinute: positiveInt(env.RATE_LIMIT_PER_MINUTE, 20),
+    ipRateLimitPerMinute: positiveInt(env.IP_RATE_LIMIT_PER_MINUTE, 120),
+    sessionCreatePerMinute: positiveInt(env.SESSION_CREATE_PER_MINUTE, 10),
+    globalSessionCreatePerMinute: positiveInt(env.GLOBAL_SESSION_CREATE_PER_MINUTE, 60),
   };
 }
 
@@ -229,6 +305,73 @@ export function sessionCookieHeader(
 }
 
 // ---------------------------------------------------------------------------
+// Client address (rate-limit key that the caller cannot mint at will)
+// ---------------------------------------------------------------------------
+
+/**
+ * Forwarded-address headers, most specific first. All of these are set by a
+ * proxy in front of the app; see the trust-model note in the module header for
+ * exactly how much they are worth (they are spoofable).
+ */
+const FORWARDED_HEADERS = [
+  'x-forwarded-for',
+  'x-real-ip',
+  'cf-connecting-ip',
+  'true-client-ip',
+] as const;
+
+/** Sentinel used when no forwarded header is present. Shared bucket, fails closed. */
+export const UNKNOWN_CLIENT_IP = 'unknown';
+
+/**
+ * Best-effort client address for rate limiting ONLY.
+ *
+ * NEVER persist this, never log it next to item content, never put it in a
+ * response: an IP is PII-adjacent and hard constraint 8 keeps the Session model
+ * free of any identifying field. It exists as an in-memory limiter key and
+ * nothing else.
+ *
+ * `X-Forwarded-For` is a comma-separated chain; the LEFT-most entry is the
+ * original client as recorded by the first proxy. On the single-instance demo
+ * that proxy is the platform's, so the left-most entry is the useful one — at
+ * the cost of being forgeable by a client the proxy trusts. A Web `Request`
+ * carries no socket, so there is no connection address to fall back to; the
+ * fallback is a shared `unknown` bucket rather than a per-caller free pass.
+ */
+export function clientIp(req: Request): string {
+  for (const name of FORWARDED_HEADERS) {
+    const raw = req.headers.get(name);
+    if (raw === null) continue;
+    const first = raw.split(',')[0]?.trim();
+    if (first !== undefined && first !== '') return first.slice(0, 64);
+  }
+  return UNKNOWN_CLIENT_IP;
+}
+
+/**
+ * Namespaced limiter keys for the address-derived budgets. The prefixes matter:
+ * an unprefixed address could otherwise collide with a session-keyed bucket.
+ *
+ * Per-session keys are the bare session cuid, exactly as the routes pass it to
+ * `assertRateLimit`; a cuid can never collide with these prefixed forms.
+ */
+export const rateLimitKeys = {
+  ip: (address: string): string => `ip:${address}`,
+  sessionCreate: (address: string): string => `new:${address}`,
+  /**
+   * The one FIXED key in this file — header rotation moves every other key and
+   * cannot move this one.
+   *
+   * Its prefix is deliberately NEITHER `ip:` NOR `new:`. `clientIp` returns
+   * attacker-supplied header text, so a caller can claim to be the literal
+   * address `*` and `sessionCreate('*')` would then be `new:*`. A shared ceiling
+   * that a client can address by name is not a ceiling, so this key uses a
+   * prefix no address-derived key can ever produce.
+   */
+  globalSessionCreate: 'global:session-create',
+} as const;
+
+// ---------------------------------------------------------------------------
 // Sessions
 // ---------------------------------------------------------------------------
 
@@ -283,13 +426,46 @@ async function createSession(config: IsolationConfig, now: Date): Promise<DemoSe
  *    it) and is never reused, so a stale link cannot resurrect old demo state.
  *
  * `forceReset` powers the explicit "start over" action on POST /api/session.
+ *
+ * RATE LIMITING LIVES HERE ON PURPOSE. This function is the single choke point
+ * every API route passes through before it does any work, and it is the only
+ * place that knows whether a request is about to MINT a session. Two budgets are
+ * charged against the client address (which the caller cannot mint at will,
+ * unlike the cookie):
+ *
+ *   - every request                -> `ipRateLimitPerMinute`
+ *   - requests that create a row   -> `sessionCreatePerMinute`
+ *
+ * The per-session budget the routes charge afterwards is defence in depth, not
+ * the load-bearing check: a caller that never sends a cookie gets a fresh id —
+ * and therefore an empty per-session window — on every request. Read the trust
+ * model in the module header before changing any of this.
+ *
+ * Throws a 429 `ApiError`; routes already funnel that through `errorResponse`.
  */
 export async function getOrCreateSession(
   req: Request,
-  options: { forceReset?: boolean; config?: IsolationConfig; now?: Date } = {},
+  options: {
+    forceReset?: boolean;
+    config?: IsolationConfig;
+    now?: Date;
+    /** Test-only escape hatch. NEVER set this from a route. */
+    skipRateLimit?: boolean;
+  } = {},
 ): Promise<SessionResolution> {
   const config = options.config ?? loadIsolationConfig();
   const now = options.now ?? new Date();
+  const enforce = options.skipRateLimit !== true;
+  const address = clientIp(req);
+
+  if (enforce) {
+    assertRateLimit(rateLimitKeys.ip(address), {
+      config,
+      now: now.getTime(),
+      limit: config.ipRateLimitPerMinute,
+    });
+  }
+
   const cookieId = options.forceReset === true ? null : readSessionCookie(req);
 
   if (cookieId !== null) {
@@ -305,6 +481,29 @@ export async function getOrCreateSession(
         return { session: existing, created: false, cookie: sessionCookieHeader(existing.id, config) };
       }
     }
+  }
+
+  // About to mint. Charge the creation budgets BEFORE touching the database, so
+  // mass session minting is bounded without writing a single row.
+  //
+  // Per-address FIRST, then the global ceiling: a single abuser must exhaust its
+  // OWN bucket before it is allowed to consume any of the shared one. Charging
+  // the global key first would let one address burn the ceiling that protects
+  // everybody else.
+  if (enforce) {
+    assertRateLimit(rateLimitKeys.sessionCreate(address), {
+      config,
+      now: now.getTime(),
+      limit: config.sessionCreatePerMinute,
+      label: 'new sessions',
+    });
+    // Not keyed on the address, so rotating a forwarded header cannot reset it.
+    assertRateLimit(rateLimitKeys.globalSessionCreate, {
+      config,
+      now: now.getTime(),
+      limit: config.globalSessionCreatePerMinute,
+      label: 'new sessions (all visitors)',
+    });
   }
 
   const session = await createSession(config, now);
@@ -368,6 +567,18 @@ function pruneStaleKeys(cutoff: number): void {
   }
 }
 
+export interface RateLimitOptions {
+  config?: IsolationConfig;
+  now?: number;
+  /**
+   * Budget for THIS key, overriding `config.rateLimitPerMinute`. Used for the
+   * per-IP and session-creation budgets, which are deliberately different sizes.
+   */
+  limit?: number;
+  /** Noun used in the 429 message, e.g. "new sessions". Defaults to "requests". */
+  label?: string;
+}
+
 export interface RateLimitDecision {
   allowed: boolean;
   limit: number;
@@ -385,12 +596,12 @@ export interface RateLimitDecision {
  */
 export function consumeRateLimit(
   key: string,
-  options: { config?: IsolationConfig; now?: number } = {},
+  options: RateLimitOptions = {},
 ): RateLimitDecision {
   const config = options.config ?? loadIsolationConfig();
   const now = options.now ?? Date.now();
   const cutoff = now - RATE_LIMIT_WINDOW_MS;
-  const limit = config.rateLimitPerMinute;
+  const limit = options.limit ?? config.rateLimitPerMinute;
 
   pruneStaleKeys(cutoff);
 
@@ -409,16 +620,14 @@ export function consumeRateLimit(
 }
 
 /** consumeRateLimit + throw a 429 ApiError. This is what routes call. */
-export function assertRateLimit(
-  key: string,
-  options: { config?: IsolationConfig; now?: number } = {},
-): RateLimitDecision {
+export function assertRateLimit(key: string, options: RateLimitOptions = {}): RateLimitDecision {
   const decision = consumeRateLimit(key, options);
   if (!decision.allowed) {
     throw new ApiError(
       429,
       'rate_limited',
-      `Rate limit reached (${decision.limit} requests per minute). Retry in ${decision.retryAfterSeconds}s.`,
+      `Rate limit reached (${decision.limit} ${options.label ?? 'requests'} per minute). ` +
+        `Retry in ${decision.retryAfterSeconds}s.`,
       { limit: decision.limit, retryAfterSeconds: decision.retryAfterSeconds },
     );
   }

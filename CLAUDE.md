@@ -368,8 +368,8 @@ npm run secretscan   # node scripts/secret-scan.mjs   (add -- --all for the whol
 
 ## 11. Current state, stated plainly
 
-**Green baseline — keep it that way.** `tsc --noEmit` is clean. `npm test` reports **207 passed, 101 skipped**
-across 9 test files (7 passing files, 2 fully skipped). The 101 skips are `describe.skip`/`it.skip` with real
+**Green baseline — keep it that way.** `tsc --noEmit` is clean. `npm test` reports **285 passed, 101 skipped**
+across 13 test files (11 passing files, 2 fully skipped). The 101 skips are `describe.skip`/`it.skip` with real
 executable bodies — they are the Codex punch-list, not dead code.
 
 **Works today:** `src/core/types.ts`, `src/config/models.ts` (all four compliance gates),
@@ -382,5 +382,8 @@ of the other four routes, the secret scanner, the git hook and CI.
 table throws `TODO(codex)` — the state machine, history re-run, the OpenAI client, all three reviewers,
 orchestration, adjudication, the solver, the item probe, defense generation and scoring, passport assembly,
 the eval runner. The gauntlet / repair / defense / passport routes return their stub error from the Codex
-function inside them. There is **no `/api/rerun` route yet** although `StudioClient.tsx` declares the call
-site. `eval/results/` contains only `.gitkeep` and a README — **no eval artifact has been produced**.
+function inside them. There is **no `/api/rerun` route, and there must never be one**: the history re-run
+happens inside `POST /api/repair`, so a second endpoint would execute the whole history twice and write
+duplicate `HistoryReRun` rows. `StudioClient.tsx` no longer names it, and `tests/studioRoutes.test.ts`
+fails if it — or `/api/defense/questions`, `/api/defense/score`, or a query-string passport — comes back.
+`eval/results/` contains only `.gitkeep` and a README — **no eval artifact has been produced**.
