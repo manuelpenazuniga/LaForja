@@ -2,9 +2,8 @@
  * LA FORJA — executable spec for the SEPARATE adjudication step (doc §6.2, §7.1).
  *
  * CONVENTION (Claude/Codex split): `adjudicate` in src/reviewers/adjudication.ts
- * is CODEX-owned and still a stub, so this whole file is `describe.skip`. The
- * bodies are real: they are the punch-list. Codex removes the `.skip` as the
- * stage lands, and every assertion below must then pass unchanged.
+ * is CODEX-owned. This executable spec covers the stage through its injected
+ * model-call seam, so it runs offline without an API key.
  *
  * THE WORD IS "SEPARATE", NEVER "INDEPENDENT". §6.2 declares the correlated-error
  * risk: the reviewer model and the adjudicator model may share a family, a
@@ -280,7 +279,7 @@ function only(checks: AdjudicatedCheck[]): AdjudicatedCheck {
 
 // ===========================================================================
 
-describe.skip('adjudication — the separate ruling stage (doc §6.2, §7.1)', () => {
+describe('adjudication — the separate ruling stage (doc §6.2, §7.1)', () => {
   // -------------------------------------------------------------------------
   describe('the seam and the call', () => {
     it('makes exactly ONE model call, at callSite "adjudication", on the requested model', async () => {

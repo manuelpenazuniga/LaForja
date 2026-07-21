@@ -18,9 +18,36 @@
  *  - assigns a verification kind, a class and a status to each check,
  *  - ABSTAINS on the unverifiable ("the model said so" is never final evidence).
  */
-import type { CheckClass, CheckStatus, ItemState, VerificationKind } from '../core/types';
-import type { ModelCallArgs, ModelCallResult } from '../openai/client';
-import type { OrchestrationResult } from './orchestrator';
+import { z } from 'zod';
+import { CHECK_CLASS_BY_VERIFICATION } from '../core/checks';
+import {
+  CHECK_STATUS,
+  REVIEWER_TYPES,
+  VERIFICATION_KINDS,
+  type CheckClass,
+  type CheckStatus,
+  type ItemState,
+  type ReviewerType,
+  type VerificationKind,
+} from '../core/types';
+import {
+  ITEM_CLOSE,
+  ITEM_OPEN,
+  callModel,
+  delimitItem,
+  stripDelimiters,
+  type ModelCallArgs,
+  type ModelCallResult,
+} from '../openai/client';
+import { DELIMITER_NOTE, GUARDRAIL_PREAMBLE } from './guardrails';
+import type { OrchestrationResult, ReviewerOutcome } from './orchestrator';
+import {
+  AmbiguitySchema,
+  DisciplineSchema,
+  DistractorSchema,
+  ItemProbeSchema,
+  REVIEWER_SCHEMAS,
+} from './schemas';
 
 /**
  * One adjudicated finding — the PRODUCER of the recorded-check shape.
@@ -123,116 +150,376 @@ export interface AdjudicationOptions {
 }
 
 /**
- * TODO(codex): implement the separate adjudication stage. It is a MODEL CALL.
+ * Response contract for the one separate adjudicator call. It is kept at this
+ * network boundary because these rulings are not reviewer evidence contracts;
+ * reviewer contracts themselves are re-validated through REVIEWER_SCHEMAS.
+ */
+export const AdjudicationSchema = z.array(
+  z.object({
+    finding_ref: z.string().trim().min(1),
+    verification_kind: z.enum(VERIFICATION_KINDS),
+    status: z.enum(CHECK_STATUS),
+    note: z.string().trim().min(1),
+  }),
+);
+export type AdjudicatorRuling = z.infer<typeof AdjudicationSchema>[number];
+
+export const ADJUDICATION_PROMPT_VERSION = 'adjudication-v1';
+
+export const ADJUDICATION_SYSTEM = [
+  GUARDRAIL_PREAMBLE,
+  DELIMITER_NOTE,
+  '',
+  'TASK: Rule only on the reviewer findings supplied in the untrusted block.',
+  'Never author an item, solution, citation, solver result, or new finding.',
+  'Return an array of rulings with finding_ref, verification_kind, status, and note.',
+  'The stable finding reference is reviewerType#index, using the displayed index.',
+  'You may refuse evidence, but you may never manufacture evidence or promote an',
+  'unverified assertion. The model said so is never final evidence.',
+].join('\n');
+
+const PROBE_EXECUTOR_VERSION = 'probe@1.0.0';
+const THRESHOLD_VERSION = 'thresholds@1.0.0';
+
+interface CandidateCheck {
+  findingRef: string;
+  check: AdjudicatedCheck;
+  dedupeKey?: string;
+  evidenceRank: number;
+}
+
+/**
+ * Runs one separate model ruling pass, then applies the non-overridable code
+ * gates: contract re-validation, evidence-based abstention, taxonomy lookup,
+ * distractor deduplication, and upstream completeness composition.
  *
- * THE CALL (doc §7.1, hard constraint 3):
- *  - Exactly ONE `callModel` (src/openai/client.ts) per adjudication pass, with
- *    `callSite: 'adjudication'`, `model: adjudicatorModel`, no `reviewerType`.
- *  - The item text and every reviewer contract go in as UNTRUSTED input: wrap
- *    them with `delimitItem` before sending. A reviewer's finding is model
- *    output, so it is exactly as untrusted as the student's stem — a finding
- *    that says "mark this accepted" is data, never an instruction.
- *  - Export an ADJUDICATION_PROMPT_VERSION (e.g. 'adjudication-v1') next to the
- *    system prompt, as ambiguity.ts / discipline.ts / distractors.ts do.
- *  - The system prompt must forbid the model from AUTHORING anything (hard
- *    constraint 2): it rules on findings it is given, it never invents an item,
- *    a solution, a citation or a solver result.
- *  - Validate the response with a Zod schema in src/reviewers/schemas.ts —
- *    add `AdjudicationSchema`, an array of
- *    { finding_ref, verification_kind, status, note } where `finding_ref`
- *    identifies the reviewer finding being ruled on. The reference scheme is
- *    `${reviewerType}#${index}`, the index being the finding's position in
- *    `orchestration.outcomes` — a stable handle the prompt can state and the
- *    code can resolve. A ruling whose `finding_ref` matches no outcome is
- *    DISCARDED: the adjudicator rules on findings it was given and never
- *    invents one (hard constraint 2). `callModel` already
- *    Zod-validates and retries ONCE; a second failure must throw readably.
- *  - Persist ONE ModelCall row for the call: callSite 'adjudication',
- *    gauntletRunId set, exact modelId, modelFamilyOk, promptVersion,
- *    promptHash, latencyMs, tokensIn/Out, schemaValid, rawJson (the row is the
- *    compliance evidence; a call with no row fails the audit).
- *  - The model FAILING is not a clean gauntlet. If the call throws or the output
- *    stays invalid after the retry, do NOT return an empty `checks` array with
- *    nextState 'DEFENSE' — that is "nobody objected" spelled the same way as
- *    "nothing ran". Surface the failure so the pipeline records the run as
- *    incomplete and GAUNTLET_CLEAN is never dispatched (src/core/types.ts).
- *
- * THE WORK:
- *  - Input: the orchestration outcomes (+ the deterministic item_probe result).
- *    ONE ReviewerOutcome carries ONE finding: the distractor MAP is fanned out
- *    by the orchestrator, so N entries arrive as N outcomes and produce N
- *    checks. `REVIEWER_SCHEMAS[reviewerType]` is therefore always the right
- *    schema for `outcome.contract` — per finding, never per response.
- *  - Re-validate every contract IN THIS STAGE, and do NOT trust
- *    `ReviewerOutcome.schemaValid`: that flag is an upstream claim about a
- *    payload this stage is about to record as evidence. Validating it here is
- *    what makes the recorded check's `schemaValid` a fact rather than a relay.
- *  - Re-validate every contract against REVIEWER_SCHEMAS; a finding that fails
- *    is recorded with schemaValid=false and status 'rejected'. Re-validate in
- *    code, not by asking the model — schema validity is not a judgment call.
- *    REJECTED means recorded-and-refused: keep the offending contract VERBATIM,
- *    do not repair it into a passing shape and do not downgrade its class to
- *    make it fit. A dropped finding is an unauditable finding.
- *  - Dedupe near-identical findings (e.g. same distractor + same hypothesized
- *    error). Keep the better-evidenced one; note the merge. Two findings that
- *    name the same distractor but hypothesize DIFFERENT errors are two findings.
- *  - Set `adjudicatorModelId` from the call result and `gauntletComplete` from
- *    stage completeness (see the field docs above), never from the finding count.
- *
- * ASSIGNING verificationKind — this is the decision that fixes the class, and
- * the class is then LOOKED UP, never chosen twice:
- *  - a solver-grounded numeric verdict (discipline, with a recorded
- *    `solver_proof`)              ⇒ 'solver'         ⇒ class 'deterministic'
- *  - a source-grounded conceptual verdict (discipline, grounded on a licensed
- *    citation excerpt)            ⇒ 'citation'       ⇒ class 'semantic'
- *  - an ambiguity: two defensible readings yielding different answers
- *                                 ⇒ 'interpretation' ⇒ class 'counterexample'
- *  - the deterministic item_probe (fixed thresholds, doc §7.3)
- *                                 ⇒ 'heuristic'      ⇒ class 'deterministic'
- *  - a distractor finding is a judgment either way: 'citation' when evidenced,
- *    'interpretation' when it is a hypothesized student error ⇒ 'semantic'.
- *  Then set `checkClass = CHECK_CLASS_BY_VERIFICATION[reviewerType]
- *  [verificationKind]`. A `null` entry is an illegal pair: reject the finding,
- *  never downgrade it to 'semantic' to make it fit.
- *
- * POPULATING the re-execution identity (required for deterministic and
- * counterexample; omit for semantic):
- *  - invariantId: the stable id of the executable check —
- *    'solver_key_matches' (solver-grounded discipline),
- *    'answer_length_flag' / 'lexical_overlap_flag' (item_probe),
- *    'ambiguity_two_readings_disagree' (ambiguity).
- *  - executorVersion: the solver version from the contract's `solver_proof`, or
- *    the probe version for item_probe. Take it from the executor that actually
- *    ran; never hardcode it, or the re-run will claim a provenance it lacks.
- *  - thresholdVersion: the threshold table in force for this run.
- *
- * ASSIGNING status: accepted | rejected | abstained | hypothesis.
- *  - ABSTAIN when a claim cannot be verified: no sufficient source, solver
- *    inconclusive, or the finding rests on nothing but the reviewer's assertion.
- *    "The model said so" is never final evidence (doc §6.2), and abstaining is
- *    the correct, expected outcome — not a failure to be minimized.
- *  - The evidence gate is enforced in CODE and is not overridable by the model:
- *    if the finding carries no citation, no solver_proof and no re-executable
- *    construction, then a ruling of 'accepted' coming back from the adjudicator
- *    is DISCARDED in favour of 'abstained'. A second model asserting the first
- *    model's assertion is still "the model said so" — the correlated-error risk
- *    (§6.2) is exactly why the adjudicator gets to refuse evidence but never to
- *    manufacture it.
- *  - An abstained check is NOT an accepted check: it must not push the item to
- *    CHALLENGED, and it must not be silently dropped either. It is recorded,
- *    counted in `abstained` and shown in the passport.
- *  - `note` is REQUIRED for every abstained or rejected check: the passport has
- *    to say WHY, and "abstained" with no reason is unauditable.
- *
- *  - nextState = 'CHALLENGED' if any accepted check exists, else 'DEFENSE'.
- *
- * Reference: doc §6.2 ("separate adjudication step", correlated-error risk
- * declared), §7.1 (adjudication is its own stage), hard constraints 1-3.
+ * A transport or response-contract failure is deliberately allowed to reject;
+ * returning DEFENSE after adjudication failed would make an incomplete run look
+ * clean. Reference: doc §6.2, §7.1; hard constraints 1-3.
  */
 export async function adjudicate(
-  _orchestration: OrchestrationResult,
-  _adjudicatorModel: string,
-  _options: AdjudicationOptions = {},
+  orchestration: OrchestrationResult,
+  adjudicatorModel: string,
+  options: AdjudicationOptions = {},
 ): Promise<AdjudicationResult> {
-  throw new Error('TODO(codex): implement separate adjudication (validate, dedupe, assign, abstain)');
+  const outcomes = orchestration.outcomes ?? [];
+  const callPayload = buildCallPayload(outcomes, options.delimitedItem);
+  const invoke = options.callModel ?? callModel;
+  const callResult = await invoke<z.infer<typeof AdjudicationSchema>>({
+    model: adjudicatorModel,
+    system: ADJUDICATION_SYSTEM,
+    delimitedItem: callPayload,
+    schema: AdjudicationSchema,
+    promptVersion: ADJUDICATION_PROMPT_VERSION,
+    callSite: 'adjudication',
+  });
+
+  // The production caller validates this at the network boundary. Re-checking
+  // also keeps an injected transport from bypassing the response contract.
+  const parsedRulings = AdjudicationSchema.safeParse(callResult.data);
+  if (!parsedRulings.success) {
+    throw new Error(
+      `Adjudicator returned an invalid ruling contract: ${JSON.stringify(parsedRulings.error.issues)}`,
+    );
+  }
+
+  const knownRefs = new Set(
+    outcomes
+      .map((outcome, index) =>
+        outcome.ok && isReviewerType(outcome.reviewerType)
+          ? findingRef(outcome.reviewerType, index)
+          : undefined,
+      )
+      .filter((value): value is string => value !== undefined),
+  );
+  const rulings = new Map<string, AdjudicatorRuling>();
+  for (const ruling of parsedRulings.data) {
+    if (knownRefs.has(ruling.finding_ref) && !rulings.has(ruling.finding_ref)) {
+      rulings.set(ruling.finding_ref, ruling);
+    }
+  }
+
+  const candidates: CandidateCheck[] = [];
+  outcomes.forEach((outcome, index) => {
+    if (!outcome.ok || !isReviewerType(outcome.reviewerType)) return;
+    candidates.push(
+      makeCandidate(outcome, index, rulings.get(findingRef(outcome.reviewerType, index)), callResult.modelId),
+    );
+  });
+
+  const checks = deduplicate(candidates).map((candidate) => candidate.check);
+  const accepted = checks.some((check) => check.status === 'accepted');
+  const gauntletComplete = orchestration.complete === true;
+
+  return {
+    checks,
+    nextState: accepted ? 'CHALLENGED' : 'DEFENSE',
+    abstained: checks.filter((check) => check.status === 'abstained').length,
+    adjudicatorModelId: callResult.modelId,
+    gauntletComplete,
+    ...(gauntletComplete ? {} : { incompleteReason: incompleteReason(orchestration) }),
+  };
+}
+
+function buildCallPayload(outcomes: ReviewerOutcome[], delimitedItem: string | undefined): string {
+  const findings = outcomes
+    .map((outcome, index) => ({
+      finding_ref: `${outcome.reviewerType}#${index}`,
+      reviewer_type: outcome.reviewerType,
+      outcome: outcome.ok ? 'produced' : 'failed',
+      ...(outcome.ok ? { contract: outcome.contract } : { error: outcome.error }),
+    }));
+  const serialized = stripDelimiters(JSON.stringify(findings));
+  const supplied = delimitedItem ?? delimitItem('No item text was supplied.');
+
+  if (supplied.startsWith(ITEM_OPEN) && supplied.endsWith(ITEM_CLOSE)) {
+    const withoutClose = supplied.slice(0, -ITEM_CLOSE.length);
+    return `${withoutClose}\nREVIEWER FINDINGS (UNTRUSTED):\n${serialized}\n${ITEM_CLOSE}`;
+  }
+
+  return delimitItem(`${stripDelimiters(supplied)}\nREVIEWER FINDINGS (UNTRUSTED):\n${serialized}`);
+}
+
+function isReviewerType(value: string): value is ReviewerType {
+  return (REVIEWER_TYPES as readonly string[]).includes(value);
+}
+
+function findingRef(reviewerType: ReviewerType, index: number): string {
+  return `${reviewerType}#${index}`;
+}
+
+function makeCandidate(
+  outcome: ReviewerOutcome,
+  index: number,
+  ruling: AdjudicatorRuling | undefined,
+  adjudicatorModelId: string,
+): CandidateCheck {
+  const reviewerType = outcome.reviewerType as ReviewerType;
+  const contract = outcome.contract;
+  const ref = findingRef(reviewerType, index);
+
+  switch (reviewerType) {
+    case 'ambiguity': {
+      const parsed = AmbiguitySchema.safeParse(contract);
+      const check = createCheck(
+        reviewerType,
+        'interpretation',
+        contract,
+        parsed.success,
+        parsed.success ? 'accepted' : 'rejected',
+        parsed.success ? undefined : schemaFailureNote(reviewerType, parsed.error.issues),
+        ruling,
+        {
+          invariantId: 'ambiguity_two_readings_disagree',
+          executorVersion: adjudicatorModelId,
+          thresholdVersion: THRESHOLD_VERSION,
+        },
+      );
+      return { findingRef: ref, check, evidenceRank: parsed.success ? 2 : 0 };
+    }
+    case 'discipline': {
+      const parsed = DisciplineSchema.safeParse(contract);
+      const hasSolver = parsed.success && parsed.data.solver_proof != null;
+      const hasCitation = parsed.success && parsed.data.citation != null;
+      const verificationKind: VerificationKind = hasSolver ? 'solver' : 'citation';
+      const status: CheckStatus = !parsed.success
+        ? 'rejected'
+        : hasSolver || hasCitation
+          ? 'accepted'
+          : 'abstained';
+      const note = !parsed.success
+        ? schemaFailureNote(reviewerType, parsed.error.issues)
+        : status === 'abstained'
+          ? 'Abstained: the discipline claim has no citation, source, or recorded solver proof to verify it.'
+          : undefined;
+      const identity = hasSolver
+        ? {
+            invariantId: 'solver_key_matches',
+            executorVersion: parsed.data.solver_proof?.solver_version ?? 'missing-solver-version',
+            thresholdVersion: THRESHOLD_VERSION,
+          }
+        : undefined;
+      const check = createCheck(
+        reviewerType,
+        verificationKind,
+        contract,
+        parsed.success,
+        status,
+        note,
+        ruling,
+        identity,
+      );
+      return { findingRef: ref, check, evidenceRank: hasSolver || hasCitation ? 3 : 1 };
+    }
+    case 'distractor': {
+      const parsed = DistractorSchema.safeParse(contract);
+      const evidenced = parsed.success && parsed.data.label === 'evidenced' && Boolean(parsed.data.evidence);
+      const verificationKind: VerificationKind = evidenced ? 'citation' : 'interpretation';
+      const status: CheckStatus = !parsed.success ? 'rejected' : evidenced ? 'accepted' : 'hypothesis';
+      const note = parsed.success ? undefined : schemaFailureNote(reviewerType, parsed.error.issues);
+      const check = createCheck(
+        reviewerType,
+        verificationKind,
+        contract,
+        parsed.success,
+        status,
+        note,
+        ruling,
+      );
+      const raw = isRecord(contract) ? contract : undefined;
+      const distractor = typeof raw?.distractor === 'string' ? normalize(raw.distractor) : undefined;
+      const error = typeof raw?.hypothesized_error === 'string'
+        ? normalize(raw.hypothesized_error)
+        : undefined;
+      return {
+        findingRef: ref,
+        check,
+        ...(distractor && error ? { dedupeKey: `${distractor}\u0000${error}` } : {}),
+        evidenceRank: evidenced ? 3 : parsed.success ? 2 : 0,
+      };
+    }
+    case 'item_probe': {
+      const parsed = ItemProbeSchema.safeParse(contract);
+      const flagged = parsed.success && (parsed.data.answer_length_flag || parsed.data.lexical_overlap_flag);
+      const invariantId = parsed.success && !parsed.data.answer_length_flag && parsed.data.lexical_overlap_flag
+        ? 'lexical_overlap_flag'
+        : 'answer_length_flag';
+      const check = createCheck(
+        reviewerType,
+        'heuristic',
+        contract,
+        parsed.success,
+        !parsed.success || !flagged ? 'rejected' : 'accepted',
+        !parsed.success
+          ? schemaFailureNote(reviewerType, parsed.error.issues)
+          : flagged
+            ? undefined
+            : 'Rejected: the deterministic item probe completed and neither published cue threshold was flagged.',
+        ruling,
+        {
+          invariantId,
+          executorVersion: PROBE_EXECUTOR_VERSION,
+          thresholdVersion: THRESHOLD_VERSION,
+        },
+      );
+      return { findingRef: ref, check, evidenceRank: flagged ? 3 : 2 };
+    }
+  }
+}
+
+function createCheck(
+  reviewerType: ReviewerType,
+  verificationKind: VerificationKind,
+  contract: unknown,
+  schemaValid: boolean,
+  protectedStatus: CheckStatus,
+  protectedNote: string | undefined,
+  ruling: AdjudicatorRuling | undefined,
+  identity?: Pick<AdjudicatedCheck, 'invariantId' | 'executorVersion' | 'thresholdVersion'>,
+): AdjudicatedCheck {
+  const checkClass = CHECK_CLASS_BY_VERIFICATION[reviewerType][verificationKind];
+  if (checkClass === null) {
+    throw new Error(`Illegal adjudication taxonomy pair: ${reviewerType}/${verificationKind}`);
+  }
+
+  let status = protectedStatus;
+  let note = protectedNote;
+  const codeProtected =
+    !schemaValid || protectedStatus === 'abstained' || protectedStatus === 'hypothesis' ||
+    (reviewerType === 'item_probe' && protectedStatus === 'rejected');
+
+  if (!codeProtected && ruling !== undefined) {
+    if (ruling.verification_kind !== verificationKind) {
+      status = 'rejected';
+      note =
+        `Rejected: the adjudicator proposed verification kind '${ruling.verification_kind}', ` +
+        `but the recorded contract requires '${verificationKind}'.`;
+    } else if (ruling.status === 'accepted') {
+      status = 'accepted';
+      note = ruling.note;
+    } else if (ruling.status === 'rejected') {
+      status = 'rejected';
+      note = `Rejected by the separate adjudicator: ${ruling.note}`;
+    } else if (ruling.status === 'abstained' || ruling.status === 'proposed') {
+      status = 'abstained';
+      note = `Abstained by the separate adjudicator: ${ruling.note}`;
+    }
+  }
+
+  if ((status === 'rejected' || status === 'abstained') && !note?.trim()) {
+    note = `The ${reviewerType} finding was ${status} because its required verification did not complete.`;
+  }
+
+  return {
+    reviewerType,
+    verificationKind,
+    checkClass,
+    status,
+    contract,
+    schemaValid,
+    ...(identity ?? {}),
+    ...(note === undefined ? {} : { note }),
+  };
+}
+
+function deduplicate(candidates: CandidateCheck[]): CandidateCheck[] {
+  const result: CandidateCheck[] = [];
+  const distractorPositions = new Map<string, number>();
+
+  for (const candidate of candidates) {
+    if (candidate.dedupeKey === undefined) {
+      result.push(candidate);
+      continue;
+    }
+    const existingPosition = distractorPositions.get(candidate.dedupeKey);
+    if (existingPosition === undefined) {
+      distractorPositions.set(candidate.dedupeKey, result.length);
+      result.push(candidate);
+      continue;
+    }
+
+    const existing = result[existingPosition];
+    if (existing === undefined) continue;
+    const kept = candidate.evidenceRank > existing.evidenceRank ? candidate : existing;
+    kept.check.note = appendNote(
+      kept.check.note,
+      'Merged a duplicate distractor finding with the same hypothesized error.',
+    );
+    result[existingPosition] = kept;
+  }
+
+  return result;
+}
+
+function schemaFailureNote(reviewerType: ReviewerType, issues: z.ZodIssue[]): string {
+  const detail = issues[0]?.message ?? 'the evidence contract was malformed';
+  return `Rejected: the ${reviewerType} finding failed contract re-validation (${detail}).`;
+}
+
+function incompleteReason(orchestration: OrchestrationResult): string {
+  const outcomes = orchestration.outcomes ?? [];
+  const expected = orchestration.expectedReviewers ?? [];
+  for (const reviewer of expected) {
+    const outcome = outcomes.find((candidate) => candidate.reviewerType === reviewer && candidate.ok);
+    if (outcome === undefined) {
+      const failure = outcomes.find((candidate) => candidate.reviewerType === reviewer && !candidate.ok);
+      return `${reviewer} did not complete${failure?.error ? `: ${failure.error}` : '.'}`;
+    }
+  }
+  if (!outcomes.some((outcome) => outcome.reviewerType === 'item_probe' && outcome.ok)) {
+    return 'item_probe did not complete.';
+  }
+  return 'The upstream orchestration run was marked incomplete.';
+}
+
+function normalize(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function appendNote(existing: string | undefined, addition: string): string {
+  return existing?.trim() ? `${existing} ${addition}` : addition;
 }

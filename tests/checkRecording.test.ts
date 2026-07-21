@@ -152,11 +152,22 @@ describe('AdjudicatedCheck — adjudication PRODUCES the recorded shape', () => 
     expect('invariantId' in recorded).toBe(false);
   });
 
-  it('is a MODEL CALL SITE: adjudicate is async, not synchronous', async () => {
+  it('is a MODEL CALL SITE: adjudicate is async and guarded by the allowlist', async () => {
+    // This assertion originally pinned a /TODO(codex)/ stub error, which was true
+    // while adjudicate threw and false the moment it was implemented. The stub
+    // marker was never the point — the SHAPE of the call site was. So assert the
+    // two properties that stay true once it works, and that a synchronous
+    // non-model function could not satisfy:
+    //
+    //   1. it is async, and
+    //   2. it enforces the runtime compliance gate on the model it was handed.
+    //
+    // 'gpt-5.6-adjudicator' is deliberately NOT on the allowlist (which is
+    // gpt-5.6, gpt-5.6-terra, gpt-5.6-sol). A function that never dispatched a
+    // model call would have no reason to reject it.
     const result = adjudicate({} as OrchestrationResult, 'gpt-5.6-adjudicator');
     expect(result).toBeInstanceOf(Promise);
-    // Still a Codex stub; what is asserted here is the SHAPE of the call site.
-    await expect(result).rejects.toThrow(/TODO\(codex\)/);
+    await expect(result).rejects.toThrow(/not an allowed model ID/);
   });
 });
 
