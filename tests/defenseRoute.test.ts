@@ -39,7 +39,7 @@ import type {
   DefenseQuestion,
   QuestionsRecord,
   ScoringRecord,
-} from '@/app/api/defense/route';
+} from '@/app/api/defense/logic';
 import type { DefenseRubric, ItemState, RubricDimension } from '@/core/types';
 import type { ModelCallArgs, ModelCallResult } from '@/openai/client';
 import type { ModelCaller } from '@/defense/viva';
@@ -94,7 +94,7 @@ const {
   outcomeFor,
   productionDeps,
   resolveScoredState,
-} = await import('@/app/api/defense/route');
+} = await import('@/app/api/defense/logic');
 
 const { SESSION_COOKIE, loadIsolationConfig, resetRateLimiter } = await import('@/demo/isolation');
 const { reduce } = await import('@/core/stateMachine');
@@ -851,7 +851,7 @@ describe('accepted findings', () => {
  * Everything above runs against injected recorders, which is what makes the
  * envelope and the transitions testable without a database. These are the rows
  * that must actually land. Unskip as `recordQuestions` / `recordScoring` are
- * implemented in src/app/api/defense/route.ts.
+ * implemented in src/app/api/defense/logic.ts.
  */
 describe('production persistence (Codex)', () => {
   it('upserts the Defense row with the questions and outcome pending', async () => {

@@ -51,7 +51,7 @@ import {
 import { fromJson, toJson } from '@/db/client';
 
 import type { Passport, PassportDeps } from '@/passport/passport';
-import type { DefenseDeps, QuestionsRecord, ScoringRecord } from '@/app/api/defense/route';
+import type { DefenseDeps, QuestionsRecord, ScoringRecord } from '@/app/api/defense/logic';
 import type { ModelCallResult } from '@/openai/client';
 import type { Citation, DefenseRubric, RubricDimension } from '@/core/types';
 
@@ -706,7 +706,7 @@ describe('defense persistence (recordQuestions / recordScoring)', () => {
     process.env.ADJUDICATOR_MODEL ??= 'gpt-5.6-sol';
     delete (globalThis as { prisma?: unknown }).prisma;
     vi.resetModules();
-    const routeModule = await import('@/app/api/defense/route');
+    const routeModule = await import('@/app/api/defense/logic');
     deps = routeModule.productionDeps();
   });
 

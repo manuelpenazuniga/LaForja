@@ -36,7 +36,7 @@ import type {
   RunCompletionRecord,
   RunStartRecord,
   RunStartedEvent,
-} from '@/app/api/gauntlet/route';
+} from '@/app/api/gauntlet/logic';
 import type { ItemState } from '@/core/types';
 import type { AdjudicatedCheck, AdjudicationResult } from '@/reviewers/adjudication';
 import type { OrchestrationResult, ReviewerOutcome } from '@/reviewers/orchestrator';
@@ -70,7 +70,7 @@ const {
   gauntletEventFor,
   handleGauntlet,
   resolveGauntletState,
-} = await import('@/app/api/gauntlet/route');
+} = await import('@/app/api/gauntlet/logic');
 
 const { SESSION_COOKIE, loadIsolationConfig, maxBodyChars, resetRateLimiter } = await import(
   '@/demo/isolation'
@@ -686,7 +686,7 @@ describe('the stream is well formed and contained', () => {
 
 /**
  * Everything below drives `runGauntletPipeline` through injected fakes. Unskip
- * as src/app/api/gauntlet/route.ts is filled in.
+ * as src/app/api/gauntlet/logic.ts is filled in.
  */
 describe('the streaming pipeline (Codex)', () => {
   // -------------------------------------------------------------------------

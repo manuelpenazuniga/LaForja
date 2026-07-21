@@ -38,7 +38,7 @@ import type {
   NewVersionRecord,
   RepairDeps,
   RepairResponse,
-} from '@/app/api/repair/route';
+} from '@/app/api/repair/logic';
 import type { HistoryRunBatch, RecordedCheck, ReRunOutcome } from '@/core/checks';
 import type { ItemState } from '@/core/types';
 import type { ProbabilityProblem } from '@/solver/probability';
@@ -72,7 +72,7 @@ const {
   historyEventFor,
   repairEntryEventFor,
   resolveRepairState,
-} = await import('@/app/api/repair/route');
+} = await import('@/app/api/repair/logic');
 
 const { SESSION_COOKIE, loadIsolationConfig, resetRateLimiter } = await import('@/demo/isolation');
 const { reRunHistory } = await import('@/core/checks');
@@ -727,7 +727,7 @@ describe('a published version is immutable', () => {
 
 /**
  * Everything below drives `applyRepair` through injected fakes. Unskip as
- * src/app/api/repair/route.ts is filled in.
+ * src/app/api/repair/logic.ts is filled in.
  */
 describe('the repair pipeline (Codex)', () => {
   // -------------------------------------------------------------------------
