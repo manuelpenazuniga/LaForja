@@ -12,15 +12,35 @@
  */
 import { z } from 'zod';
 import { GUARDRAIL_PREAMBLE, DELIMITER_NOTE } from './guardrails';
-import { DistractorMapSchema, type DistractorMap } from './schemas';
-import { callModel } from '../openai/client';
+import { DistractorMapSchema, DistractorSchema, type DistractorMap } from './schemas';
+import {
+  callModel,
+  type ModelCallArgs,
+  type ModelCallResult,
+} from '../openai/client';
 
 // OpenAI structured output (and json_object mode) requires a JSON OBJECT at the
-// root — a bare array is rejected. The public contract is still the array
-// (DistractorMapSchema); we wrap it under a single `findings` key only for the
-// wire, and unwrap it below. The array's validation — non-empty, unique keys,
-// per-entry rules — is unchanged, since DistractorMapSchema is nested verbatim.
-const DistractorEnvelopeSchema = z.object({ findings: DistractorMapSchema });
+// root — a bare array is rejected — so the array is wrapped under a `findings`
+// key for the wire and unwrapped below.
+//
+// WHY THE WIRE SCHEMA IS A PLAIN ARRAY, NOT DistractorMapSchema:
+// DistractorMapSchema carries the domain-level `.superRefine` that enforces
+// unique distractor keys. The provider schema only needs the object-rooted wire
+// envelope; `callModel` validates that envelope, then the full map contract is
+// deliberately re-applied after unwrapping. Keeping this construction here is
+// critical: the production streaming route used to build a second distractor
+// call with the bare map schema, so the provider returned {findings:[...]} while
+// that duplicate path expected an array at the root.
+const DistractorEnvelopeSchema = z.object({
+  findings: z.array(DistractorSchema).min(1),
+});
+
+type DistractorEnvelope = z.infer<typeof DistractorEnvelopeSchema>;
+
+/** Injectable model boundary used by the streaming route to retain telemetry. */
+export type DistractorReviewerCaller = <T>(
+  args: ModelCallArgs<T>,
+) => Promise<ModelCallResult<T>>;
 
 // v3: the wire shape changed from a bare array to a { findings: [...] } object,
 // because OpenAI structured output requires an object at the JSON root. The
@@ -58,10 +78,10 @@ export const DISTRACTOR_SYSTEM = [
  *    It is ALREADY wrapped by the orchestrator (`toDelimitedItem`); do NOT call
  *    delimitItem on it here — wrapping twice nests the delimiters and breaks the
  *    untrusted-input boundary (hard constraint 1).
- *  - schema = DistractorMapSchema: the whole response is the MAP (a non-empty
- *    array, one entry per distractor, distractor keys unique). Each entry is
- *    itself validated by DistractorSchema, which forces label='hypothesis' when
- *    evidence is absent.
+ *  - the wire schema is an object `{ findings: [...] }`, because structured
+ *    output requires an object root. The unwrapped array is then validated by
+ *    DistractorMapSchema (non-empty, unique distractor keys, and per-entry
+ *    evidence/label rules).
  *  - The orchestrator maps EACH ENTRY to its own Check (reviewerType='distractor',
  *    checkClass='semantic'); an entry with label='hypothesis' ⇒ that Check's
  *    status stays 'hypothesis'. N entries in, N Check rows out.
@@ -71,7 +91,22 @@ export async function reviewDistractors(
   delimitedItem: string,
   model: string,
 ): Promise<DistractorMap> {
-  const result = await callModel<z.infer<typeof DistractorEnvelopeSchema>>({
+  return (await reviewDistractorsWithTelemetry(delimitedItem, model)).data;
+}
+
+/**
+ * The single distractor model-call path. Production passes a capturing caller
+ * so it can persist the exact call telemetry; the ordinary orchestrator uses
+ * the defaults. Both therefore share the same object-rooted wire schema and the
+ * same post-unwrapping domain validation.
+ */
+export async function reviewDistractorsWithTelemetry(
+  delimitedItem: string,
+  model: string,
+  timeoutMs?: number,
+  caller: DistractorReviewerCaller = callModel,
+): Promise<ModelCallResult<DistractorMap>> {
+  const result = await caller<DistractorEnvelope>({
     model,
     system: DISTRACTOR_SYSTEM,
     delimitedItem,
@@ -79,7 +114,10 @@ export async function reviewDistractors(
     promptVersion: DISTRACTOR_PROMPT_VERSION,
     callSite: 'orchestrator',
     reviewerType: 'distractor',
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
   });
-  // Unwrap to the public contract: the orchestrator still sees the array.
-  return result.data.findings;
+  return {
+    ...result,
+    data: DistractorMapSchema.parse(result.data.findings),
+  };
 }

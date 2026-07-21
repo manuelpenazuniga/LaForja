@@ -278,10 +278,15 @@ export const openaiTransport: ModelTransport = async (req) => {
   // of the exported transport cannot bypass the allowlist. Must stay first.
   assertRuntimeCompliance(req.model);
 
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is required for the OpenAI transport.');
+  }
+
   // The SDK retries selected network and 5xx failures by default. Disable that
   // hidden inner retry so one transport invocation is exactly one HTTP call;
   // the bounded retry on invalid model output belongs exclusively to callModel.
-  const client = new OpenAI({ maxRetries: 0, timeout: req.timeoutMs });
+  const client = new OpenAI({ apiKey, maxRetries: 0, timeout: req.timeoutMs });
   const hasOptionalFields = schemaContainsOptional(req.schema);
 
   // Strict Structured Outputs require every property to be required. SDK

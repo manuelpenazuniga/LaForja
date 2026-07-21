@@ -64,12 +64,8 @@ import {
 } from '@/reviewers/adjudication';
 import { AMBIGUITY_PROMPT_VERSION, AMBIGUITY_SYSTEM } from '@/reviewers/ambiguity';
 import { DISCIPLINE_PROMPT_VERSION, DISCIPLINE_SYSTEM } from '@/reviewers/discipline';
-import { DISTRACTOR_PROMPT_VERSION, DISTRACTOR_SYSTEM } from '@/reviewers/distractors';
-import {
-  AmbiguitySchema,
-  DisciplineSchema,
-  DistractorMapSchema,
-} from '@/reviewers/schemas';
+import { reviewDistractorsWithTelemetry } from '@/reviewers/distractors';
+import { AmbiguitySchema, DisciplineSchema } from '@/reviewers/schemas';
 import { callModel, type ModelCallArgs, type ModelCallResult } from '@/openai/client';
 import type { EvalConfig } from '@/eval/types';
 import type {
@@ -356,22 +352,11 @@ async function streamingRunGauntlet(args: StreamingGauntletArgs): Promise<Orches
 
   const modelReviewer = <T>(
     reviewerType: 'ambiguity' | 'discipline' | 'distractor',
-    system: string,
-    promptVersion: string,
-    schema: z.ZodType<T>,
+    review: (itemText: string, model: string) => Promise<ModelCallResult<T>>,
   ) => async (itemText: string, model: string): Promise<T> => {
     const startedAt = Date.now();
     try {
-      const result = await callModel<T>({
-        model,
-        system,
-        delimitedItem: itemText,
-        schema,
-        promptVersion,
-        callSite: 'orchestrator',
-        reviewerType,
-        timeoutMs: REVIEWER_TIMEOUT_MS,
-      });
+      const result = await review(itemText, model);
       args.onReviewerSettled(
         {
           reviewerType,
@@ -418,21 +403,37 @@ async function streamingRunGauntlet(args: StreamingGauntletArgs): Promise<Orches
     ...DEFAULT_GAUNTLET_DEPS,
     reviewAmbiguity: modelReviewer(
       'ambiguity',
-      AMBIGUITY_SYSTEM,
-      AMBIGUITY_PROMPT_VERSION,
-      AmbiguitySchema,
+      (itemText, model) => callModel({
+        model,
+        system: AMBIGUITY_SYSTEM,
+        delimitedItem: itemText,
+        schema: AmbiguitySchema,
+        promptVersion: AMBIGUITY_PROMPT_VERSION,
+        callSite: 'orchestrator',
+        reviewerType: 'ambiguity',
+        timeoutMs: REVIEWER_TIMEOUT_MS,
+      }),
     ),
     reviewDiscipline: modelReviewer(
       'discipline',
-      DISCIPLINE_SYSTEM,
-      DISCIPLINE_PROMPT_VERSION,
-      DisciplineSchema,
+      (itemText, model) => callModel({
+        model,
+        system: DISCIPLINE_SYSTEM,
+        delimitedItem: itemText,
+        schema: DisciplineSchema,
+        promptVersion: DISCIPLINE_PROMPT_VERSION,
+        callSite: 'orchestrator',
+        reviewerType: 'discipline',
+        timeoutMs: REVIEWER_TIMEOUT_MS,
+      }),
     ),
     reviewDistractors: modelReviewer(
       'distractor',
-      DISTRACTOR_SYSTEM,
-      DISTRACTOR_PROMPT_VERSION,
-      DistractorMapSchema,
+      (itemText, model) => reviewDistractorsWithTelemetry(
+        itemText,
+        model,
+        REVIEWER_TIMEOUT_MS,
+      ),
     ),
     runItemProbe(input) {
       const startedAt = Date.now();

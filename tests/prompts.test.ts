@@ -138,18 +138,22 @@ describe('DISTRACTOR_SYSTEM asks for the §6.2 MAP, not one finding', () => {
     expect(DISTRACTOR_PROMPT_VERSION).not.toBe('distractor-v1');
   });
 
-  it('sends the map schema to callModel, not the single-finding schema', async () => {
-    const src = await readFile(
+  it('uses one object-rooted wire path and reapplies the full map contract after unwrapping', async () => {
+    const reviewerSrc = await readFile(
       new URL('../src/reviewers/distractors.ts', import.meta.url),
       'utf8',
     );
-    // The map is the contract. It is wrapped under `findings` ONLY because the
-    // API requires a JSON object root, never a bare array — the array's rules
-    // (non-empty, unique keys, per-entry validation) are unchanged because
-    // DistractorMapSchema is nested verbatim. The single-finding schema is never
-    // what gets sent.
-    expect(src).toContain('findings: DistractorMapSchema');
-    expect(src).not.toMatch(/schema:\s*DistractorSchema\b/);
+    const routeSrc = await readFile(
+      new URL('../src/app/api/gauntlet/logic.ts', import.meta.url),
+      'utf8',
+    );
+    // OpenAI requires an object at the JSON root. The shared reviewer owns that
+    // wire envelope, while the full non-empty/unique-key map contract still runs
+    // after unwrapping. The production route must delegate to this same path.
+    expect(reviewerSrc).toContain('findings: z.array(DistractorSchema).min(1)');
+    expect(reviewerSrc).toContain('DistractorMapSchema.parse(result.data.findings)');
+    expect(routeSrc).toContain('reviewDistractorsWithTelemetry(');
+    expect(routeSrc).not.toContain('DistractorMapSchema');
   });
 });
 
