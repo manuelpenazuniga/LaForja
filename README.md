@@ -56,8 +56,10 @@ enough for a bounded, reproducible solver to verify.
 
 **Live demo: <https://la-forja-edu.vercel.app>**
 
-Open it and press **"Load demo challenge"**. You get a deliberately defective
-original item — the classic two-children problem:
+Open it — the landing page explains the whole loop — and press **"Enter the
+studio"**. A short first-visit onboarding hands you the one move that matters:
+**"Load the demo challenge"**. You get a deliberately defective original item —
+the classic two-children problem:
 
 > *"A family has two children. It is known that **one of them is a boy**. What is
 > the probability that both children are boys?"* — author's key: **1/3**
@@ -307,7 +309,7 @@ npm install
 cp .env.example .env.local     # set OPENAI_API_KEY to enable live model calls
 npm run db:generate && npm run db:push
 npm run db:seed                # seeds the two-children demo challenge
-npm run dev                    # http://localhost:3000
+npm run dev                    # http://localhost:3000 — landing; the studio is at /studio
 ```
 
 Verify the build the way CI does:
