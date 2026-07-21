@@ -266,7 +266,7 @@ const EVENT_FOR_OUTCOME: Record<DefenseRubric['outcome'], StateEvent> = {
 // ---------------------------------------------------------------------------
 // CODEX-OWNED — executable spec, skipped until the stub is implemented.
 // ---------------------------------------------------------------------------
-describe.skip('generateDefenseQuestions (doc §6.3 — two adaptive written questions)', () => {
+describe('generateDefenseQuestions (doc §6.3 — two adaptive written questions)', () => {
   it('returns EXACTLY 2 questions matching DefenseQuestionsSchema', async () => {
     const fake = fakeCaller([QUESTIONS_OK]);
     const questions = await generateDefenseQuestions(CTX, TEST_MODEL, { callModel: fake.call });
@@ -361,7 +361,7 @@ describe.skip('generateDefenseQuestions (doc §6.3 — two adaptive written ques
   });
 });
 
-describe.skip('scoreDefense (doc §6.3 — explicit rubric, 3 dimensions × 0-2)', () => {
+describe('scoreDefense (doc §6.3 — explicit rubric, 3 dimensions × 0-2)', () => {
   const answers = [ANSWER_1, ANSWER_2];
 
   it('returns all three RUBRIC_DIMENSIONS exactly once each', async () => {
@@ -392,14 +392,24 @@ describe.skip('scoreDefense (doc §6.3 — explicit rubric, 3 dimensions × 0-2)
     }
   });
 
-  it('rejects a rubric whose evidence is blank — whitespace is not evidence', async () => {
+  // A malformed rubric IS an evaluator failure, so it lands on 'inconclusive'
+  // like every other one — see the note above the critical suite below. What
+  // these three assert is the other half of that rule: the forged rubric must
+  // never survive as a GRADE. Not accepted, and not thrown either, because a
+  // throw just moves the decision to whichever caller forgets to catch it.
+  it('never grades a rubric whose evidence is blank — whitespace is not evidence', async () => {
     const blank = {
       dimensions: RUBRIC_DIMENSIONS.map((key) => ({ dimension: key, score: 2, evidence: '   ' })),
       total: 6,
       outcome: 'passed',
     };
     const fake = fakeCaller([blank]);
-    await expect(scoreDefense(CTX, answers, TEST_MODEL, { callModel: fake.call })).rejects.toThrow();
+    const rubric = await scoreDefense(CTX, answers, TEST_MODEL, { callModel: fake.call });
+
+    expect(rubric.outcome).toBe('inconclusive');
+    // The 6/6 the evaluator claimed must not have become the student's score.
+    expect(rubric.total).not.toBe(6);
+    expect(meetsPublishThreshold(rubric)).toBe(false);
   });
 
   it('returns a total equal to the sum of the three scores', async () => {
@@ -411,10 +421,14 @@ describe.skip('scoreDefense (doc §6.3 — explicit rubric, 3 dimensions × 0-2)
     expect(rubric.total).toBe(5);
   });
 
-  it('rejects a forged total that does not match the scores', async () => {
+  it('never grades a forged total that does not match the scores', async () => {
     const forged = { ...(scoredRubric([1, 1, 1], 'failed') as object), total: 6 };
     const fake = fakeCaller([forged]);
-    await expect(scoreDefense(CTX, answers, TEST_MODEL, { callModel: fake.call })).rejects.toThrow();
+    const rubric = await scoreDefense(CTX, answers, TEST_MODEL, { callModel: fake.call });
+
+    expect(rubric.outcome).toBe('inconclusive');
+    expect(rubric.total).not.toBe(6);
+    expect(meetsPublishThreshold(rubric)).toBe(false);
   });
 
   it('produces an outcome that AGREES with meetsPublishThreshold', async () => {
@@ -436,9 +450,15 @@ describe.skip('scoreDefense (doc §6.3 — explicit rubric, 3 dimensions × 0-2)
     expect(zeroRubric.outcome).toBe('failed');
   });
 
-  it('rejects a model-claimed "passed" that the threshold does not support', async () => {
+  it('never grants a model-claimed "passed" that the threshold does not support', async () => {
+    // 4/6 with a zero. The evaluator says passed; the rule says otherwise, and
+    // the rule wins. This is the case where an unchecked evaluator would publish
+    // an item that the rubric explicitly refuses.
     const fake = fakeCaller([scoredRubric([2, 2, 0], 'passed')]);
-    await expect(scoreDefense(CTX, answers, TEST_MODEL, { callModel: fake.call })).rejects.toThrow();
+    const rubric = await scoreDefense(CTX, answers, TEST_MODEL, { callModel: fake.call });
+
+    expect(rubric.outcome).not.toBe('passed');
+    expect(meetsPublishThreshold(rubric)).toBe(false);
   });
 
   it('validates with DefenseRubricSchema and sends the call as a viva call', async () => {
@@ -476,7 +496,7 @@ describe.skip('scoreDefense (doc §6.3 — explicit rubric, 3 dimensions × 0-2)
  * on purpose: not rejected AND not published. A silent pass is as wrong as an
  * auto-reject; the item simply has no verdict yet.
  */
-describe.skip('scoreDefense — evaluator failure is INCONCLUSIVE, never an auto-reject (doc §6.3)', () => {
+describe('scoreDefense — evaluator failure is INCONCLUSIVE, never an auto-reject (doc §6.3)', () => {
   const answers = [ANSWER_1, ANSWER_2];
 
   const FAILURES: ReadonlyArray<readonly [string, Error]> = [
