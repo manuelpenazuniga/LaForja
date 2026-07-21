@@ -175,7 +175,7 @@ export const DEFAULT_PASSPORT_DEPS: PassportDeps = {
 };
 
 /**
- * TODO(codex): assemble the passport for a published item.
+ * Assemble and freeze the item-level record for a published item.
  *
  * THE FREEZE COMES FIRST. If `loadStoredPassport` returns a snapshot, RETURN IT
  * VERBATIM and do not re-assemble and do not save again. Everything below only
@@ -213,8 +213,101 @@ export const DEFAULT_PASSPORT_DEPS: PassportDeps = {
  * Reference: doc §6.4.
  */
 export async function buildPassport(
-  _itemId: string,
-  _deps: PassportDeps = DEFAULT_PASSPORT_DEPS,
+  itemId: string,
+  deps: PassportDeps = DEFAULT_PASSPORT_DEPS,
 ): Promise<Passport> {
-  throw new Error('TODO(codex): implement item passport assembly');
+  const storedPassport = await deps.loadStoredPassport(itemId);
+  if (storedPassport !== null) return storedPassport;
+
+  const source = await deps.loadPassportSource(itemId);
+  if (source === null) {
+    throw new Error(`Cannot build a passport for unknown item '${itemId}'`);
+  }
+
+  if (source.itemState !== 'PUBLISHED') {
+    throw new Error(`Cannot build a passport for item '${itemId}' in ${source.itemState}`);
+  }
+
+  if (source.historyBatch !== null) {
+    if (source.historyBatch.blocksPublish || source.historyBatch.status !== 'complete') {
+      throw new Error(`Cannot build a passport while item '${itemId}' has blocked history`);
+    }
+  } else if (source.versions.length > 1) {
+    throw new Error(`Cannot build a passport for repaired item '${itemId}' without history`);
+  }
+
+  if (
+    source.disciplineVerdict?.verdict === 'correct' &&
+    source.disciplineVerdict.citation === null
+  ) {
+    throw new Error(`Cannot build a passport with an uncited correct verdict for '${itemId}'`);
+  }
+
+  const acceptedAttacks: PassportAttack[] = source.checks
+    .filter((check) => check.status === 'accepted')
+    .map((check) => ({
+      reviewerType: check.reviewerType,
+      checkClass: check.checkClass,
+      contract: check.contract,
+    }));
+
+  const historyReRun: PassportHistoryEntry[] = [];
+  if (source.historyBatch !== null) {
+    for (const checkClass of PASSPORT_CLASS_ORDER) {
+      for (const outcome of source.historyBatch.outcomes) {
+        if (outcome.checkClass !== checkClass) continue;
+
+        const detail = outcome.detail === undefined ? {} : { detail: outcome.detail };
+        if (outcome.checkClass === 'semantic') {
+          if (outcome.result === 'readjudicated') {
+            historyReRun.push({
+              checkClass: outcome.checkClass,
+              result: outcome.result,
+              ...detail,
+              verdict: outcome.verdict,
+            });
+          } else {
+            historyReRun.push({
+              checkClass: outcome.checkClass,
+              result: outcome.result,
+              ...detail,
+            });
+          }
+        } else {
+          historyReRun.push({
+            checkClass: outcome.checkClass,
+            result: outcome.result,
+            ...detail,
+          });
+        }
+      }
+    }
+  }
+
+  const passport: Passport = {
+    itemId: source.itemId,
+    itemVersionId: source.publishedVersionId,
+    authorPseudonym: source.authorPseudonym,
+    provenance: source.provenance,
+    license: source.license,
+    discipline: source.discipline,
+    acceptedAttacks,
+    historyReRun,
+    disciplineVerdict: source.disciplineVerdict ?? {
+      verdict: 'unverified',
+      citation: null,
+    },
+    defense:
+      source.defense === null || source.defense.outcome === 'inconclusive'
+        ? { outcome: 'inconclusive' }
+        : source.defense,
+    versions: source.versions.map((version) => ({
+      versionNumber: version.versionNumber,
+      ...(version.diff === undefined ? {} : { diff: version.diff }),
+    })),
+    publishedAt: source.publishedAt,
+  };
+
+  await deps.saveSnapshot(passport);
+  return passport;
 }

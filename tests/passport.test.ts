@@ -18,9 +18,8 @@
  *   · a snapshot that silently rewrites itself when an upstream row changes.
  * Every one of those produces a shape-valid passport and a false record.
  *
- * OWNER SPLIT (see CLAUDE.md): `buildPassport` is a CODEX-owned stub, so this
- * suite is written in full and marked `describe.skip`. The skipped bodies ARE
- * the punch-list; Codex removes `.skip` as the assembly lands.
+ * OWNER SPLIT (see CLAUDE.md): `buildPassport` is CODEX-owned. This suite drives
+ * the completed assembly through its injected dependencies.
  *
  * THE SEAM. Assembly reads the database, and a passport that can only be built
  * against a live Postgres/SQLite file is a passport nobody verifies. It
@@ -310,10 +309,10 @@ const PASSPORT_KEYS = [
 ] as const;
 
 // ---------------------------------------------------------------------------
-// CODEX-OWNED — buildPassport. Unskip as the assembly lands.
+// CODEX-OWNED — buildPassport.
 // ---------------------------------------------------------------------------
 
-describe.skip('buildPassport — provenance, license and identity (doc §6.4)', () => {
+describe('buildPassport — provenance, license and identity (doc §6.4)', () => {
   it('carries provenance, license and discipline through from the item', async () => {
     const deps = fakeStore();
     const passport = await buildPassport(ITEM_ID, deps);
@@ -347,7 +346,7 @@ describe.skip('buildPassport — provenance, license and identity (doc §6.4)', 
   });
 });
 
-describe.skip('buildPassport — ITEM-LEVEL, never student-level (doc §6.4, §9)', () => {
+describe('buildPassport — ITEM-LEVEL, never student-level (doc §6.4, §9)', () => {
   it('emits no field beyond the Passport contract', async () => {
     const deps = fakeStore();
     const passport = await buildPassport(ITEM_ID, deps);
@@ -399,7 +398,7 @@ describe.skip('buildPassport — ITEM-LEVEL, never student-level (doc §6.4, §9
   });
 });
 
-describe.skip('buildPassport — ACCEPTED attacks only (doc §6.2, §6.4)', () => {
+describe('buildPassport — ACCEPTED attacks only (doc §6.2, §6.4)', () => {
   it('presents every accepted check with its counterexample contract', async () => {
     const deps = fakeStore();
     const passport = await buildPassport(ITEM_ID, deps);
@@ -455,7 +454,7 @@ describe.skip('buildPassport — ACCEPTED attacks only (doc §6.2, §6.4)', () =
   });
 });
 
-describe.skip('buildPassport — history re-run GROUPED BY CHECK CLASS (doc §5)', () => {
+describe('buildPassport — history re-run GROUPED BY CHECK CLASS (doc §5)', () => {
   it('reports one entry per re-run outcome', async () => {
     const deps = fakeStore();
     const passport = await buildPassport(ITEM_ID, deps);
@@ -575,7 +574,7 @@ describe.skip('buildPassport — history re-run GROUPED BY CHECK CLASS (doc §5)
   });
 });
 
-describe.skip('buildPassport — discipline verdict WITH its citation (doc §6.2)', () => {
+describe('buildPassport — discipline verdict WITH its citation (doc §6.2)', () => {
   it('shows the verdict together with the full citation', async () => {
     const deps = fakeStore();
     const passport = await buildPassport(ITEM_ID, deps);
@@ -615,7 +614,7 @@ describe.skip('buildPassport — discipline verdict WITH its citation (doc §6.2
   });
 });
 
-describe.skip('buildPassport — the defense rubric, or `inconclusive` (doc §6.3)', () => {
+describe('buildPassport — the defense rubric, or `inconclusive` (doc §6.3)', () => {
   it('carries the full rubric when the defense was scored', async () => {
     const deps = fakeStore();
     const passport = await buildPassport(ITEM_ID, deps);
@@ -650,7 +649,7 @@ describe.skip('buildPassport — the defense rubric, or `inconclusive` (doc §6.
   });
 });
 
-describe.skip('buildPassport — version history WITH the diff (doc §5, §6.4)', () => {
+describe('buildPassport — version history WITH the diff (doc §5, §6.4)', () => {
   it('lists every version in order', async () => {
     const deps = fakeStore();
     const passport = await buildPassport(ITEM_ID, deps);
@@ -683,7 +682,7 @@ describe.skip('buildPassport — version history WITH the diff (doc §5, §6.4)'
 // than no certificate at all.
 // ---------------------------------------------------------------------------
 
-describe.skip('buildPassport — refuses what was never published (doc §6.4)', () => {
+describe('buildPassport — refuses what was never published (doc §6.4)', () => {
   const unpublished = ITEM_STATES.filter((state) => state !== 'PUBLISHED');
 
   for (const state of unpublished) {
@@ -707,7 +706,7 @@ describe.skip('buildPassport — refuses what was never published (doc §6.4)', 
   });
 });
 
-describe.skip('buildPassport — refuses while the history batch blocks publication (doc §5)', () => {
+describe('buildPassport — refuses while the history batch blocks publication (doc §5)', () => {
   it('refuses when blocksPublish is true', async () => {
     // If the batch blocks, there is no publication to certify — whatever the
     // item's state column happens to say.
@@ -778,7 +777,7 @@ describe.skip('buildPassport — refuses while the history batch blocks publicat
   });
 });
 
-describe.skip('buildPassport — the snapshot is FROZEN at publish time (doc §6.4)', () => {
+describe('buildPassport — the snapshot is FROZEN at publish time (doc §6.4)', () => {
   it('persists the snapshot exactly once', async () => {
     const deps = fakeStore();
     await buildPassport(ITEM_ID, deps);
