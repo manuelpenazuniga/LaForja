@@ -80,9 +80,16 @@ describe('the five routes that exist', () => {
 });
 
 describe('client stubs point at routes that exist', () => {
-  const sources = ['StudioClient.tsx', 'page.tsx'];
+  /**
+   * The studio lives at /studio (the landing page owns /). StudioClient.tsx and
+   * studio/page.tsx are the files that talk about endpoints; the landing page
+   * (page.tsx) and the onboarding drawer are presentation-only, so they are
+   * scanned for drift but not required to name any endpoint.
+   */
+  const sources = ['StudioClient.tsx', 'studio/page.tsx'];
+  const presentationOnly = ['page.tsx', 'OnboardingDrawer.tsx'];
 
-  for (const file of sources) {
+  for (const file of [...sources, ...presentationOnly]) {
     it(`${file} names no endpoint without a route file`, () => {
       const text = read(file);
       const referenced = new Set<string>();
@@ -92,7 +99,7 @@ describe('client stubs point at routes that exist', () => {
         if (path.length > '/api'.length) referenced.add(path);
       }
 
-      expect(referenced.size).toBeGreaterThan(0);
+      if (sources.includes(file)) expect(referenced.size).toBeGreaterThan(0);
       for (const path of referenced) {
         expect(
           CANONICAL_ROUTES.includes(path),
@@ -118,7 +125,7 @@ describe('client stubs point at routes that exist', () => {
 
   for (const endpoint of PHANTOM_ENDPOINTS) {
     it(`never resurrects ${endpoint}`, () => {
-      for (const file of sources) {
+      for (const file of [...sources, ...presentationOnly]) {
         expect(read(file), `${file} still references ${endpoint}`).not.toContain(endpoint);
       }
       // And it must not quietly appear as a real route either.
