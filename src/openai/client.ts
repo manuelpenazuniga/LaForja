@@ -15,7 +15,7 @@
  */
 import { createHash } from 'node:crypto';
 import type { z } from 'zod';
-import { isCompliantModel } from '../config/models';
+import { assertRuntimeCompliance, isCompliantModel } from '../config/models';
 
 /** Wrap untrusted item text in unambiguous delimiters (constraint 1). */
 export const ITEM_OPEN = '<<<UNTRUSTED_ITEM>>>';
@@ -83,6 +83,143 @@ export function promptHash(system: string): string {
   return createHash('sha256').update(system).digest('hex').slice(0, 16);
 }
 
+/**
+ * Default wall-clock budget for ONE transport attempt (not for the whole
+ * `callModel`, which may make two). Overridable per call via
+ * `ModelCallArgs.timeoutMs`; three reviewers run concurrently behind this, so
+ * the bound is what keeps a stalled provider from wedging a gauntlet run.
+ */
+export const DEFAULT_TIMEOUT_MS = 60_000;
+
+// ---------------------------------------------------------------------------
+// The transport seam
+// ---------------------------------------------------------------------------
+
+/**
+ * WHY THIS SEAM EXISTS.
+ *
+ * `callModel` is two very different jobs welded together: (a) speak HTTP to a
+ * provider, and (b) validate/retry/measure/log around whatever came back. Only
+ * (a) needs the network and an API key. Splitting them at this type means every
+ * behaviour that actually carries risk — retry-exactly-once, schema refusal,
+ * timeout, the compliance gate, the delimiter guarantee — is exercisable
+ * offline against a fake, and the real transport drops in unchanged the moment
+ * a key exists.
+ *
+ * The seam is placed at the LAST possible point before the wire, deliberately.
+ * Everything above it is ours and is tested; the untested surface below it is
+ * one function whose only job is to turn this request into an HTTP call.
+ */
+export interface ModelTransportRequest {
+  /** EXACT model ID to dispatch. Already passed `assertRuntimeCompliance`. */
+  model: string;
+  /** Trusted system prompt (guardrails + task). */
+  system: string;
+  /**
+   * The user payload: UNTRUSTED item text, ALREADY wrapped by `delimitItem`.
+   * A transport must send this VERBATIM — no re-wrapping, no trimming, no
+   * templating around it. The wrap happens exactly once, upstream.
+   */
+  delimitedItem: string;
+  /**
+   * The contract the response must satisfy. The transport is expected to
+   * constrain the provider's structured output to this schema rather than
+   * merely hope for JSON; `callModel` re-validates regardless, because a
+   * provider-side constraint is a convenience, never the guarantee.
+   */
+  schema: z.ZodTypeAny;
+  /** Stable name for the structured-output schema, e.g. "ambiguity-v1". */
+  schemaName: string;
+  /** 0 for the first attempt, 1 for the single permitted retry. */
+  attempt: 0 | 1;
+  /**
+   * Terse "your previous output was invalid for the contract" nudge. Present
+   * ONLY on `attempt: 1`. It is appended by the transport to the system prompt
+   * so the retry is a repair request rather than a blind re-roll.
+   */
+  repairNudge?: string;
+  /** Aborted by `callModel` when `timeoutMs` elapses. Honour it. */
+  signal: AbortSignal;
+  /** Budget for THIS attempt, in ms. Mirrors the deadline behind `signal`. */
+  timeoutMs: number;
+  /** Telemetry passthrough so a transport can tag/trace the request. */
+  promptVersion: string;
+  callSite: ModelCallSite;
+  reviewerType?: string;
+}
+
+/**
+ * The RAW result of one network round trip. Deliberately unparsed: validation
+ * is `callModel`'s job, above the seam, so a transport can never "helpfully"
+ * launder a malformed response into a valid-looking object.
+ */
+export interface ModelTransportResponse {
+  /** Response text exactly as returned. Not trimmed, not JSON.parse'd. */
+  text: string;
+  /**
+   * The model ID the PROVIDER echoed back, when it reports one. This is the
+   * ground truth for telemetry and may differ from the requested ID (aliases,
+   * dated snapshots). Omit it rather than defaulting to the requested ID —
+   * `callModel` falls back, and "we asked for X" must stay distinguishable from
+   * "the provider confirmed X".
+   */
+  modelId?: string;
+  tokensIn?: number;
+  tokensOut?: number;
+  costUsd?: number;
+}
+
+/**
+ * The single async function that actually talks to the network. Everything else
+ * in this module is pure or fake-driven.
+ *
+ * A transport MUST: send `delimitedItem` verbatim, expose no tools to the model,
+ * honour `signal`, and reject (never resolve with junk) on transport failure.
+ * A transport MUST NOT: retry internally (retry-exactly-once lives in
+ * `callModel`, and a hidden inner retry would silently make it three or four
+ * calls), parse or repair the response, or substitute a different model ID.
+ */
+export type ModelTransport = (req: ModelTransportRequest) => Promise<ModelTransportResponse>;
+
+/**
+ * The real OpenAI Responses API transport. Codex-owned: this is the only code
+ * in the system that needs a live API key, which is exactly why it is the only
+ * code isolated behind a seam.
+ *
+ * TODO(codex): implement with the OpenAI SDK (`openai` is already a dependency).
+ *  - `client.responses.create({ model: req.model, ... })`.
+ *  - INPUT: system message = `req.system` plus, when `req.repairNudge` is
+ *    present (retry only), that nudge appended as a final system line. User
+ *    message = `req.delimitedItem` VERBATIM.
+ *  - NO TOOLS. Do not pass `tools`, do not enable web search / code interpreter
+ *    / file search (hard constraint 1: reviewers get no tools and no network).
+ *  - STRUCTURED OUTPUT: constrain the response to `req.schema` — convert it to
+ *    JSON Schema and pass it as `text.format = { type: 'json_schema', name:
+ *    req.schemaName, schema, strict: true }`. Use the SDK's zod helper if it
+ *    accepts the schema; several of ours are `.refine`/`.superRefine`-wrapped,
+ *    whose predicates CANNOT be expressed in JSON Schema — so the structural
+ *    part is constrained provider-side and the semantic refinements are caught
+ *    by `callModel`'s `safeParse`. That split is intended, not a gap.
+ *  - TIMEOUT: pass `req.signal` through to the SDK so an aborted call actually
+ *    cancels the socket. `callModel` also races the promise, so a transport that
+ *    ignores the signal leaks a request but cannot hang the caller.
+ *  - RESPONSE: `text` = the raw output text. `modelId` = the model ID the API
+ *    ECHOED BACK on the response body (`response.model`), NOT `req.model` — the
+ *    point of the field is to record what actually ran. `tokensIn`/`tokensOut`
+ *    from `response.usage`; omit any field the API did not report.
+ *  - ERRORS: let SDK errors reject. Do not catch-and-return an empty string;
+ *    "the provider 500'd" and "the model returned `''`" are different failures
+ *    and `callModel` reports them differently.
+ * Reference: doc §7.1, hard constraints 1, 3, 4.
+ */
+export const openaiTransport: ModelTransport = async (_req) => {
+  throw new Error(
+    'TODO(codex): implement the OpenAI Responses API transport (structured output, no tools, abort signal)',
+  );
+};
+
+export type ModelCallSite = 'orchestrator' | 'adjudication' | 'viva';
+
 export interface ModelCallArgs<T> {
   model: string;
   system: string;
@@ -90,8 +227,9 @@ export interface ModelCallArgs<T> {
   delimitedItem: string;
   schema: z.ZodType<T>;
   promptVersion: string;
-  callSite: 'orchestrator' | 'adjudication' | 'viva';
+  callSite: ModelCallSite;
   reviewerType?: string;
+  /** Per-attempt budget. Defaults to DEFAULT_TIMEOUT_MS. */
   timeoutMs?: number;
 }
 
@@ -112,20 +250,49 @@ export interface ModelCallResult<T> {
 /**
  * Perform one bounded, schema-validated model call.
  *
- * TODO(codex): implement using the OpenAI SDK Responses API.
- *  - Build the request from { model, system, delimitedItem }; NO tools, response
- *    constrained to JSON that matches `schema` (use structured output / json_schema).
- *  - Measure latency; capture usage tokens and estimated cost if available.
- *  - Parse + `schema.safeParse`. On failure, retry EXACTLY once with a terse
- *    "your previous output was invalid JSON for the contract" nudge; on a second
- *    failure, throw a readable error including the raw text (do not swallow).
- *  - Set modelFamilyOk = isCompliantModel(model). Return ModelCallResult<T>.
- * Reference: doc §7.1, hard constraint 3.
+ * The existing single-argument call sites (the three reviewers) keep working
+ * unchanged; `transport` is an appended optional parameter, so injecting a fake
+ * is opt-in and production behaviour is the default.
+ *
+ * TODO(codex): implement the validate / retry-once / telemetry logic AROUND the
+ * transport. Do NOT put any HTTP here — the network lives below the seam.
+ *  1. COMPLIANCE GATE FIRST. Call `assertRuntimeCompliance(args.model)` BEFORE
+ *     constructing a request or touching `transport`. A non-allowlisted model
+ *     must never reach the wire, so this throw must be unreachable-past
+ *     (hard constraint 4). Nothing may be dispatched ahead of it.
+ *  2. Attempt 0: build a ModelTransportRequest (attempt: 0, no repairNudge,
+ *     schemaName from promptVersion/reviewerType) with a fresh AbortController;
+ *     start a `timeoutMs ?? DEFAULT_TIMEOUT_MS` timer that aborts it. RACE the
+ *     transport promise against the deadline — a transport that ignores its
+ *     signal must still not hang the caller. Always clear the timer.
+ *  3. `JSON.parse` the text, then `args.schema.safeParse`. BOTH failures are the
+ *     same failure class: a malformed body and a body that violates a `.refine`
+ *     (e.g. an ambiguity payload whose two answers are equal) are each "the
+ *     contract was not met" and each get the one retry.
+ *  4. On failure, retry EXACTLY ONCE (attempt: 1, `repairNudge` set). Exactly
+ *     once — not a backoff loop. Two attempts maximum, per call, always.
+ *  5. On a second failure, THROW readable: include the reviewer/callSite, the
+ *     promptVersion, the Zod issues, and the RAW response text. Never return a
+ *     partially-valid object and never fall back to a default — a silently bad
+ *     contract object becomes a Check row and poisons the passport.
+ *  6. A transport REJECTION (network error) surfaces as-is, wrapped with call
+ *     context. Transport rejections are NOT retried by this layer.
+ *  7. Telemetry on success: latencyMs measured across the attempt(s), tokens and
+ *     cost from the response, promptVersion, `promptHash(args.system)`,
+ *     schemaValid: true, modelId = `response.modelId ?? args.model` (the echoed
+ *     ID wins), modelFamilyOk = `isCompliantModel(modelId)` — recompute from the
+ *     ID that actually ran, not from the one requested.
+ * Reference: doc §7.1, hard constraints 3 and 4.
  */
-export async function callModel<T>(args: ModelCallArgs<T>): Promise<ModelCallResult<T>> {
-  void isCompliantModel; // used by the Codex implementation
-  void promptHash;
+export async function callModel<T>(
+  args: ModelCallArgs<T>,
+  transport: ModelTransport = openaiTransport,
+): Promise<ModelCallResult<T>> {
+  void assertRuntimeCompliance; // step 1
+  void isCompliantModel; // step 7
+  void promptHash; // step 7
+  void transport;
   throw new Error(
-    'TODO(codex): implement bounded Responses API call with Zod-validate + retry-once',
+    'TODO(codex): implement bounded model call with Zod-validate + retry-once over ModelTransport',
   );
 }

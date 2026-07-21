@@ -19,6 +19,7 @@
  *  - ABSTAINS on the unverifiable ("the model said so" is never final evidence).
  */
 import type { CheckClass, CheckStatus, ItemState, VerificationKind } from '../core/types';
+import type { ModelCallArgs, ModelCallResult } from '../openai/client';
 import type { OrchestrationResult } from './orchestrator';
 
 /**
@@ -63,6 +64,62 @@ export interface AdjudicationResult {
   /** Next item state implied by the accepted checks (CHALLENGED vs clean). */
   nextState: Extract<ItemState, 'CHALLENGED' | 'DEFENSE'>;
   abstained: number;
+  /**
+   * The EXACT adjudicator model id that ruled on this run — compliance evidence
+   * (doc §7.1, hard constraint 4). Take it from `ModelCallResult.modelId`, i.e.
+   * the id the provider reports, not the id that was requested: a request for an
+   * alias must record the resolved snapshot, or the audit trail asserts a model
+   * that never ran.
+   */
+  adjudicatorModelId: string;
+  /**
+   * COMPLETENESS, and the reason this field exists at all.
+   *
+   * `nextState === 'DEFENSE'` means only "no finding was accepted". That is the
+   * same sentence for "the item is clean" and for "the reviewers all timed out
+   * and nobody objected because nobody ran". Those must never be one boolean.
+   *
+   * true ONLY when `OrchestrationResult.complete` is true (every expected
+   * reviewer AND the deterministic item_probe produced a result) AND this
+   * adjudication pass itself completed. It COMPOSES the upstream flag rather
+   * than recomputing it: the orchestrator owns what "every reviewer ran" means,
+   * adjudication owns "and then it was ruled on". The caller may dispatch
+   * GAUNTLET_CLEAN (src/core/types.ts) only when this is true — `nextState`
+   * alone never authorizes it.
+   *
+   * Findings that were all REJECTED or all ABSTAINED do NOT make a run
+   * incomplete: rejecting and abstaining are reviews that happened. What makes a
+   * run incomplete is a stage that did not run.
+   */
+  gauntletComplete: boolean;
+  /** REQUIRED when `gauntletComplete` is false: which stage did not complete. */
+  incompleteReason?: string;
+}
+
+/**
+ * INJECTABLE TRANSPORT SEAM at the network boundary.
+ *
+ * There is no runtime API key, so the adjudication stage would otherwise be
+ * unverifiable end to end. Everything on THIS side of the seam — contract
+ * re-validation, dedup, class assignment, abstention, the completeness gate —
+ * is pure and is driven by fakes in tests/adjudication.test.ts. Production
+ * passes nothing and gets `callModel` (src/openai/client.ts).
+ */
+export type AdjudicatorTransport = <T>(args: ModelCallArgs<T>) => Promise<ModelCallResult<T>>;
+
+export interface AdjudicationOptions {
+  /** Defaults to `callModel` from src/openai/client.ts. */
+  callModel?: AdjudicatorTransport;
+  /**
+   * The item text, ALREADY wrapped by `toDelimitedItem` at the orchestrator
+   * boundary (hard constraint 1). Do NOT call `delimitItem` on it again here:
+   * one wrap, one boundary. The reviewer CONTRACTS are a different payload and
+   * are untrusted too — those adjudication wraps itself, since nothing wrapped
+   * them earlier.
+   */
+  delimitedItem?: string;
+  /** Injectable clock so recorded instants are reproducible under test. */
+  now?: () => string;
 }
 
 /**
@@ -83,7 +140,12 @@ export interface AdjudicationResult {
  *  - Validate the response with a Zod schema in src/reviewers/schemas.ts —
  *    add `AdjudicationSchema`, an array of
  *    { finding_ref, verification_kind, status, note } where `finding_ref`
- *    identifies the reviewer finding being ruled on. `callModel` already
+ *    identifies the reviewer finding being ruled on. The reference scheme is
+ *    `${reviewerType}#${index}`, the index being the finding's position in
+ *    `orchestration.outcomes` — a stable handle the prompt can state and the
+ *    code can resolve. A ruling whose `finding_ref` matches no outcome is
+ *    DISCARDED: the adjudicator rules on findings it was given and never
+ *    invents one (hard constraint 2). `callModel` already
  *    Zod-validates and retries ONCE; a second failure must throw readably.
  *  - Persist ONE ModelCall row for the call: callSite 'adjudication',
  *    gauntletRunId set, exact modelId, modelFamilyOk, promptVersion,
@@ -97,11 +159,25 @@ export interface AdjudicationResult {
  *
  * THE WORK:
  *  - Input: the orchestration outcomes (+ the deterministic item_probe result).
+ *    ONE ReviewerOutcome carries ONE finding: the distractor MAP is fanned out
+ *    by the orchestrator, so N entries arrive as N outcomes and produce N
+ *    checks. `REVIEWER_SCHEMAS[reviewerType]` is therefore always the right
+ *    schema for `outcome.contract` — per finding, never per response.
+ *  - Re-validate every contract IN THIS STAGE, and do NOT trust
+ *    `ReviewerOutcome.schemaValid`: that flag is an upstream claim about a
+ *    payload this stage is about to record as evidence. Validating it here is
+ *    what makes the recorded check's `schemaValid` a fact rather than a relay.
  *  - Re-validate every contract against REVIEWER_SCHEMAS; a finding that fails
  *    is recorded with schemaValid=false and status 'rejected'. Re-validate in
  *    code, not by asking the model — schema validity is not a judgment call.
+ *    REJECTED means recorded-and-refused: keep the offending contract VERBATIM,
+ *    do not repair it into a passing shape and do not downgrade its class to
+ *    make it fit. A dropped finding is an unauditable finding.
  *  - Dedupe near-identical findings (e.g. same distractor + same hypothesized
- *    error). Keep the better-evidenced one; note the merge.
+ *    error). Keep the better-evidenced one; note the merge. Two findings that
+ *    name the same distractor but hypothesize DIFFERENT errors are two findings.
+ *  - Set `adjudicatorModelId` from the call result and `gauntletComplete` from
+ *    stage completeness (see the field docs above), never from the finding count.
  *
  * ASSIGNING verificationKind — this is the decision that fixes the class, and
  * the class is then LOOKED UP, never chosen twice:
@@ -135,6 +211,13 @@ export interface AdjudicationResult {
  *    inconclusive, or the finding rests on nothing but the reviewer's assertion.
  *    "The model said so" is never final evidence (doc §6.2), and abstaining is
  *    the correct, expected outcome — not a failure to be minimized.
+ *  - The evidence gate is enforced in CODE and is not overridable by the model:
+ *    if the finding carries no citation, no solver_proof and no re-executable
+ *    construction, then a ruling of 'accepted' coming back from the adjudicator
+ *    is DISCARDED in favour of 'abstained'. A second model asserting the first
+ *    model's assertion is still "the model said so" — the correlated-error risk
+ *    (§6.2) is exactly why the adjudicator gets to refuse evidence but never to
+ *    manufacture it.
  *  - An abstained check is NOT an accepted check: it must not push the item to
  *    CHALLENGED, and it must not be silently dropped either. It is recorded,
  *    counted in `abstained` and shown in the passport.
@@ -149,6 +232,7 @@ export interface AdjudicationResult {
 export async function adjudicate(
   _orchestration: OrchestrationResult,
   _adjudicatorModel: string,
+  _options: AdjudicationOptions = {},
 ): Promise<AdjudicationResult> {
   throw new Error('TODO(codex): implement separate adjudication (validate, dedupe, assign, abstain)');
 }
