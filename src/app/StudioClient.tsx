@@ -579,7 +579,9 @@ interface LaneSpec {
   reviewerType: ReviewerType;
   name: string;
   source: string;
-  contractFields: string;
+  /** Plain-English job description shown on the card; the raw contract fields
+   * appear only inside the expandable evidence view. */
+  mission: string;
   rule: string;
 }
 
@@ -587,29 +589,29 @@ const LANE_SPECS: LaneSpec[] = [
   {
     reviewerType: 'ambiguity',
     name: 'Ambiguity',
-    source: 'Responses call',
-    contractFields: 'interpretation_a · interpretation_b · answer_a · answer_b · evidence',
-    rule: 'Valid only when the two readings produce different answers.',
+    source: 'AI reviewer',
+    mission: 'Hunts for stems that can be honestly read in two different ways.',
+    rule: 'A claim counts only when the two readings force two different answers.',
   },
   {
     reviewerType: 'discipline',
-    name: 'Discipline · probability',
-    source: 'Responses call + solver',
-    contractFields: 'claim · verdict · citation{source_id, version_date, license, excerpt, relevance}',
-    rule: 'A correct verdict requires a full citation. No sufficient source means unverified.',
+    name: 'Mathematics · probability',
+    source: 'AI reviewer + exact solver',
+    mission: 'Checks the mathematics itself: is the marked key actually right?',
+    rule: 'A "correct" verdict requires a full citation — no sufficient source means unverified.',
   },
   {
     reviewerType: 'distractor',
     name: 'Distractors',
-    source: 'Responses call',
-    contractFields: 'distractor · hypothesized_error · confidence · evidence? · label',
-    rule: 'A finding without evidence is labeled hypothesis, not a defect.',
+    source: 'AI reviewer',
+    mission: 'Asks whether each wrong option captures a mistake a real student would make.',
+    rule: 'A finding without evidence is labeled a hypothesis, never a defect.',
   },
   {
     reviewerType: 'item_probe',
-    name: 'Item probe',
-    source: 'Deterministic · no model',
-    contractFields: 'answer_length_ratio · lexical_overlap_score',
+    name: 'Cue probe',
+    source: 'Deterministic · no AI',
+    mission: 'Flags options that give the answer away by length or by word overlap with the stem.',
     rule: `Published thresholds: length ≥ ${LENGTH_HIGH} or ≤ ${LENGTH_LOW}, overlap ≥ ${OVERLAP_HIGH}.`,
   },
 ];
@@ -633,6 +635,25 @@ const ROADMAP: string[] = [
 ];
 
 const OPTION_KEYS = ['A', 'B', 'C', 'D', 'E'];
+
+/** The seven numbered surfaces of the assay sheet, in on-screen order. */
+type SheetPanel =
+  | 'item'
+  | 'gauntlet'
+  | 'counterexample'
+  | 'repair'
+  | 'rerun'
+  | 'defense'
+  | 'passport';
+
+/** Where a surface sits relative to the visitor's current move. */
+type SheetPhase = 'done' | 'now' | 'later';
+
+const PHASE_LABEL: Record<SheetPhase, string> = {
+  done: 'done',
+  now: 'you are here',
+  later: 'later',
+};
 
 // The single authorized guarantee rendering (doc §5) — never paraphrased.
 const GUARANTEE_TEXT =
@@ -1097,6 +1118,111 @@ export default function StudioClient({
   // NEW_DISPUTE / DISPUTE_REPAIR path (src/core/types.ts SCOPE NOTE).
   const repairEditable = state === 'CHALLENGED' && item !== null;
 
+  // -- step guidance ---------------------------------------------------------
+  // Purely derived presentation state: which surface is the current move, which
+  // are settled, which come later. No transition is decided here — the phases
+  // are read off the recorded state exactly as the reducer left it.
+
+  const panelPhase = useMemo<Record<SheetPanel, SheetPhase>>(() => {
+    return {
+      item: state === 'DRAFT' ? 'now' : 'done',
+      gauntlet: state === 'GAUNTLET' ? 'now' : state === 'DRAFT' ? 'later' : 'done',
+      counterexample:
+        counterexample === null
+          ? acceptedChecks.length > 0
+            ? 'done'
+            : 'later'
+          : state === 'CHALLENGED'
+            ? 'now'
+            : 'done',
+      repair: state === 'CHALLENGED' ? 'now' : previousVersion !== null ? 'done' : 'later',
+      rerun: state === 'REGRESSION' ? 'now' : reRunByClass !== null ? 'done' : 'later',
+      defense:
+        state === 'DEFENSE' || state === 'DEFENSE_INCONCLUSIVE'
+          ? 'now'
+          : state === 'PUBLISHED'
+            ? 'done'
+            : 'later',
+      passport: state === 'PUBLISHED' ? 'now' : 'later',
+    };
+  }, [state, counterexample, acceptedChecks.length, previousVersion, reRunByClass]);
+
+  const scrollToPanel = useCallback((id: string) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+  }, []);
+
+  interface NextMove {
+    step: string;
+    text: string;
+    action: { kind: 'load' | 'gauntlet' | 'retry' | 'goto'; label: string; target?: string } | null;
+    note?: string;
+  }
+
+  const nextMove = useMemo<NextMove>(() => {
+    if (!item) {
+      return {
+        step: 'start here',
+        text: 'Load the demo challenge — a broken problem is your starting point.',
+        action: { kind: 'load', label: 'Load demo challenge' },
+      };
+    }
+    switch (state) {
+      case 'DRAFT':
+        return {
+          step: 'step 01',
+          text: 'Read the item and hunt for the defect, then send it into review.',
+          action: { kind: 'gauntlet', label: 'Run the gauntlet' },
+          ...(modelCallsAvailable ? {} : { note: 'next · needs a server API key' }),
+        };
+      case 'GAUNTLET':
+        return { step: 'step 02', text: 'The reviewers are examining your item…', action: null };
+      case 'CHALLENGED':
+        return {
+          step: 'steps 03–04',
+          text: 'A counterexample was accepted. Read it, then repair the stem.',
+          action: { kind: 'goto', target: 'repair', label: 'Go to the repair' },
+        };
+      case 'REGRESSION':
+        return {
+          step: 'step 05',
+          text: 'The full check history is re-running against your new version…',
+          action: null,
+        };
+      case 'DEFENSE':
+        return {
+          step: 'step 06',
+          text: 'The history is clean. Now defend your repair in writing.',
+          action: { kind: 'goto', target: 'defense', label: 'Go to the defense' },
+        };
+      case 'DEFENSE_INCONCLUSIVE':
+        return {
+          step: 'step 06',
+          text: 'The evaluator failed — no verdict was recorded. Retry when ready.',
+          action: { kind: 'retry', label: 'Retry the defense' },
+        };
+      case 'PUBLISHED':
+        return {
+          step: 'step 07',
+          text: 'Published. The passport is the auditable record of the whole fight.',
+          action: { kind: 'goto', target: 'passport', label: 'Read the passport' },
+        };
+      default:
+        return { step: 'state', text: STATE_COPY[state].note, action: null };
+    }
+  }, [item, state, modelCallsAvailable]);
+
+  const runNextMove = useCallback(() => {
+    const action = nextMove.action;
+    if (!action) return;
+    if (action.kind === 'load') void handleLoadDemo();
+    else if (action.kind === 'gauntlet') void handleSubmitToGauntlet();
+    else if (action.kind === 'retry') handleRetryDefense();
+    else if (action.target) scrollToPanel(action.target);
+  }, [nextMove, handleLoadDemo, handleSubmitToGauntlet, handleRetryDefense, scrollToPanel]);
+
   const workingDiff = useMemo(() => {
     if (!item || !draft) return [];
     return tokenDiff(item.stem, draft.stem);
@@ -1234,8 +1360,8 @@ export default function StudioClient({
           <h2 className="onboard__title">Start with a broken item</h2>
           <p className="onboard__copy">
             {item
-              ? 'The team-authored probability challenge is loaded on the assay sheet below.'
-              : 'Load the team-authored probability challenge. It contains a deliberate defect and no personal data.'}
+              ? 'The challenge is loaded. Everything below is one long worksheet — the assay sheet — that follows your item through its seven numbered steps: review, counterexample, repair, re-run, defense and the final passport. The bar at the bottom of the screen always tells you your next move.'
+              : 'Load the team-authored probability challenge — a real multiple-choice problem with one deliberate defect hidden in it, and no personal data. Your job across this page: find the flaw, survive the review, repair it and defend it.'}
           </p>
           <div className="onboard__actions">
             <button
@@ -1280,19 +1406,23 @@ export default function StudioClient({
       {item && draft ? (
         <>
           {/* ------------------------------------------------ 01 item + form */}
-          <section className="panel" id="item">
+          <section className="panel" id="item" data-step={panelPhase.item}>
             <div className="panel__head">
               <span className="panel__step">01</span>
               <h2 className="panel__title">The item</h2>
               <span className="panel__aside">
+                <span className="panel__phase" data-phase={panelPhase.item}>
+                  {PHASE_LABEL[panelPhase.item]}
+                </span>
                 <span className="station">BILLET</span>
                 v{item.versionNumber} · {formEditable ? 'editable' : 'read only'}
               </span>
             </div>
             <p className="panel__lede">
-              One original multiple-choice item and its author rationale. Published versions
-              are immutable by design, so a repair creates a new version instead of
-              overwriting this one.
+              This is the problem on trial: its question (the stem), four options, the
+              key the author marked as correct, and the author&rsquo;s reasoning. Somewhere
+              in here hides a defect — read it closely, edit anything while it is a
+              draft, then send it into review below.
             </p>
 
             <div className="panel__body form-grid">
@@ -1394,18 +1524,23 @@ export default function StudioClient({
           </section>
 
           {/* ---------------------------------------------------- 02 gauntlet */}
-          <section className="panel" id="gauntlet">
+          <section className="panel" id="gauntlet" data-step={panelPhase.gauntlet}>
             <div className="panel__head">
               <span className="panel__step">02</span>
               <h2 className="panel__title">The gauntlet</h2>
               <span className="panel__aside">
+                <span className="panel__phase" data-phase={panelPhase.gauntlet}>
+                  {PHASE_LABEL[panelPhase.gauntlet]}
+                </span>
                 <span className="station">HEAT</span>
                 {abstained > 0 ? `${abstained} abstained` : 'four independent lanes'}
               </span>
             </div>
             <p className="panel__lede">
-              Four independent evidence contracts settle separately. Without a configured
-              model transport, their absence stays visible and is labelled next.
+              The review stage: four independent examiners attack your item at the same
+              time — three AI reviewers and one fixed calculation that needs no AI. Each
+              must attach evidence to anything it claims; each card below shows what its
+              examiner hunts for and settles on its own as results arrive.
             </p>
 
             <div className="panel__body lanes">
@@ -1426,16 +1561,25 @@ export default function StudioClient({
             id="counterexample"
             ref={counterexampleRef}
             data-populated={counterexample ? 'true' : 'false'}
+            data-step={panelPhase.counterexample}
           >
             <div className="panel__head">
               <span className="panel__step">03</span>
               <h2 className="panel__title">Accepted counterexample</h2>
-              <span className="panel__aside"><span className="station">FRACTURE</span>separate adjudication</span>
+              <span className="panel__aside">
+                <span className="panel__phase" data-phase={panelPhase.counterexample}>
+                  {PHASE_LABEL[panelPhase.counterexample]}
+                </span>
+                <span className="station">FRACTURE</span>
+                separate adjudication
+              </span>
             </div>
             <p className="panel__lede">
-              What this surface is built to show is not a score but a construction anyone can
-              re-execute: two readings of the same stem that produce two different answers.
-              An accepted record will appear only after the separate adjudication step.
+              The strongest kind of finding a reviewer can land: not an opinion but a
+              demonstration that the item is broken — two honest readings of your stem
+              that lead to two different answers, shown so you can re-execute them
+              yourself. When one is accepted here, the item is officially challenged and
+              the repair below unlocks.
             </p>
 
             <div className="panel__body">
@@ -1450,7 +1594,8 @@ export default function StudioClient({
               ) : (
                 <div className="pending-surface" aria-disabled="true">
                   <p className="lane__empty">
-                    NEXT — no accepted counterexample is recorded. The assay remains unstamped.
+                    Empty for now — a counterexample appears here only if a reviewer proves
+                    one and the adjudication step accepts it.
                   </p>
                 </div>
               )}
@@ -1473,11 +1618,14 @@ export default function StudioClient({
           </section>
 
           {/* ------------------------------------------------------ 04 repair */}
-          <section className="panel" id="repair">
+          <section className="panel" id="repair" data-step={panelPhase.repair}>
             <div className="panel__head">
               <span className="panel__step">04</span>
               <h2 className="panel__title">Repair</h2>
               <span className="panel__aside">
+                <span className="panel__phase" data-phase={panelPhase.repair}>
+                  {PHASE_LABEL[panelPhase.repair]}
+                </span>
                 <span className="station">HAMMER</span>
                 {previousVersion
                   ? `v${previousVersion.versionNumber} → v${item.versionNumber}`
@@ -1485,8 +1633,9 @@ export default function StudioClient({
               </span>
             </div>
             <p className="panel__lede">
-              A repair creates a new version and records its base. The word-level diff below
-              distinguishes removed and added text without pass/fail colour.
+              Your move: rewrite the stem so only one reading survives. Submitting never
+              overwrites version 1 — it creates version 2 and immediately re-runs every
+              recorded check against it. The diff below shows exactly what you changed.
             </p>
 
             <div className="panel__body">
@@ -1541,12 +1690,22 @@ export default function StudioClient({
           </section>
 
           {/* ------------------------------------------------- 05 history re-run */}
-          <section className="panel" id="rerun">
+          <section className="panel" id="rerun" data-step={panelPhase.rerun}>
             <div className="panel__head">
               <span className="panel__step">05</span>
               <h2 className="panel__title">History re-run</h2>
-              <span className="panel__aside"><span className="station">QUENCH</span>grouped by check class</span>
+              <span className="panel__aside">
+                <span className="panel__phase" data-phase={panelPhase.rerun}>
+                  {PHASE_LABEL[panelPhase.rerun]}
+                </span>
+                <span className="station">QUENCH</span>
+                grouped by check class
+              </span>
             </div>
+            <p className="panel__lede">
+              Did your fix hold? Every check the item ever faced runs again on the new
+              version, grouped by the promise each class keeps.
+            </p>
             <p className="guarantee">{GUARANTEE_TEXT}</p>
 
             <div className="panel__body classes">
@@ -1593,19 +1752,24 @@ export default function StudioClient({
           </section>
 
           {/* ----------------------------------------------------- 06 defense */}
-          <section className="panel" id="defense">
+          <section className="panel" id="defense" data-step={panelPhase.defense}>
             <div className="panel__head">
               <span className="panel__step">06</span>
               <h2 className="panel__title">Written defense</h2>
               <span className="panel__aside">
-                <span className="station">PROOF</span>2 questions · 3 dimensions
+                <span className="panel__phase" data-phase={panelPhase.defense}>
+                  {PHASE_LABEL[panelPhase.defense]}
+                </span>
+                <span className="station">PROOF</span>
+                2 questions · 3 dimensions
               </span>
             </div>
             <p className="panel__lede">
-              The reviewers challenge; the student owns the repair and the defense. Each
-              rubric dimension carries the textual evidence it was scored on, and an
-              evaluator that fails sends the item to DEFENSE_INCONCLUSIVE rather than to an
-              automatic reject. Model-evaluated questions and scoring are next without a key.
+              Fixing it is not enough — you also show you understand why it was broken.
+              Two short written questions, scored against the three-part rubric on the
+              right; every score comes with the quoted evidence it was based on. If the
+              evaluator itself fails, the result is inconclusive — a retry, never an
+              automatic reject. Question generation and scoring need the server API key.
             </p>
 
             <div className="panel__body viva">
@@ -1678,17 +1842,21 @@ export default function StudioClient({
           </section>
 
           {/* --------------------------------------------------- 07 passport */}
-          <section className="panel" id="passport">
+          <section className="panel" id="passport" data-step={panelPhase.passport}>
             <div className="panel__head">
               <span className="panel__step">07</span>
               <h2 className="panel__title">Item passport</h2>
-              <span className="panel__aside"><span className="station">STAMP</span>item level · pseudonym only</span>
+              <span className="panel__aside">
+                <span className="panel__phase" data-phase={panelPhase.passport}>
+                  {PHASE_LABEL[panelPhase.passport]}
+                </span>
+                <span className="station">STAMP</span>
+                item level · pseudonym only
+              </span>
             </div>
             <p className="panel__lede">
-              Publishing produces an auditable learning trace: provenance and license,
-              accepted attacks, the history re-run by class, the discipline verdict with
-              its full citation or marked unverified, the rubric, and the version diff.
-              It is assembled at publication and frozen.
+              The item&rsquo;s diploma: every attack it survived, every re-run, the defense
+              scores and every version, assembled at publication and frozen.
             </p>
 
             <div className="panel__body">
@@ -1697,7 +1865,7 @@ export default function StudioClient({
               ) : (
                 <div className="pending-surface" aria-disabled="true">
                   <p className="lane__empty">
-                    NEXT — no frozen passport exists until a defense passes.
+                    Empty until a defense passes — nothing publishes without one.
                   </p>
                 </div>
               )}
@@ -1753,6 +1921,25 @@ export default function StudioClient({
             : 'Model calls are next until a server API key is configured.'}
         </p>
       </footer>
+
+      {/* Always-visible guidance: where you are and what to do next. */}
+      <aside className="next-bar" aria-live="polite" aria-label="Your next move">
+        <span className="next-bar__step">{nextMove.step}</span>
+        <p className="next-bar__text">{nextMove.text}</p>
+        {nextMove.note ? <span className="next-bar__note">{nextMove.note}</span> : null}
+        {nextMove.action ? (
+          <button
+            type="button"
+            className="btn btn--forge"
+            disabled={
+              busy !== null || (nextMove.action.kind === 'gauntlet' && !modelCallsAvailable)
+            }
+            onClick={runNextMove}
+          >
+            {busy !== null ? 'Working…' : nextMove.action.label}
+          </button>
+        ) : null}
+      </aside>
     </main>
   );
 }
@@ -1778,7 +1965,7 @@ function LanePanel({
         <StatusTag status={lane.status} />
       </div>
       <p className="lane__source">{spec.source}</p>
-      <p className="lane__contract-name">{spec.contractFields}</p>
+      <p className="lane__mission">{spec.mission}</p>
       <p className="lane__rule">{spec.rule}</p>
 
       <div className="lane__state">

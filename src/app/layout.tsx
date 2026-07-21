@@ -60,7 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       <body>
         {children}
-        <Toaster position="bottom-center" offset={24} gap={10} />
+        <Toaster position="top-center" offset={24} gap={10} />
       </body>
     </html>
   );
