@@ -600,10 +600,22 @@ describe('callModel — untrusted-item delimiter boundary survives to the wire',
 
 describe('callModel — the seam itself', () => {
   it('defaults to the real transport when none is injected', async () => {
-    // Production behaviour must be the default; injection is opt-in. Until Codex
-    // implements it, the real transport throws its TODO — which is exactly how we
-    // can tell the default is wired without a network.
-    await expect(callModel<Ambiguity>(ambiguityArgs())).rejects.toThrow(/TODO\(codex\)/);
+    // Production behaviour must be the default; injection is opt-in. With no
+    // transport injected, the real openaiTransport runs. Force the key empty so
+    // it fails at OpenAI client construction instead of reaching the network:
+    // that keeps this offline AND proves the default is the production transport,
+    // because a fake transport would neither need a key nor make a call.
+    //
+    // (This assertion previously pinned the TODO(codex) placeholder; the transport
+    // is implemented now, so it checks the wired production path instead.)
+    vi.stubEnv('OPENAI_API_KEY', '');
+    try {
+      await expect(callModel<Ambiguity>(ambiguityArgs())).rejects.toThrow(
+        /OPENAI_API_KEY|api key/i,
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('works for any schema, not just the reviewer contracts', async () => {

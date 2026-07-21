@@ -14,6 +14,8 @@
  *     then fail readable. Record model, latency, tokens, promptVersion, promptHash.
  */
 import { createHash } from 'node:crypto';
+import OpenAI from 'openai';
+import { zodTextFormat } from 'openai/helpers/zod';
 import type { z } from 'zod';
 import { assertRuntimeCompliance, isCompliantModel } from '../config/models';
 
@@ -199,6 +201,60 @@ export interface ModelTransportResponse {
  */
 export type ModelTransport = (req: ModelTransportRequest) => Promise<ModelTransportResponse>;
 
+/** A structural check used only to choose the provider-side output format. */
+function schemaContainsOptional(
+  schema: z.ZodTypeAny,
+  seenSchemas: Set<z.ZodTypeAny> = new Set(),
+  seenValues: Set<object> = new Set(),
+): boolean {
+  if (seenSchemas.has(schema)) return false;
+  seenSchemas.add(schema);
+  if (schema.isOptional()) return true;
+
+  const definition = (schema as z.ZodTypeAny & { _def: Record<string, unknown> })._def;
+  const nested: unknown[] = Object.values(definition);
+
+  // ZodObject and ZodLazy keep their children behind zero-argument factories.
+  // Invoke only those known structural factories; refinement callbacks are
+  // deliberately never executed here.
+  for (const key of ['shape', 'getter'] as const) {
+    const factory = definition[key];
+    if (typeof factory === 'function') nested.push(factory());
+  }
+
+  return nested.some((value) => optionalInValue(value, seenSchemas, seenValues));
+}
+
+function optionalInValue(
+  value: unknown,
+  seenSchemas: Set<z.ZodTypeAny>,
+  seenValues: Set<object>,
+): boolean {
+  if (isZodSchema(value)) return schemaContainsOptional(value, seenSchemas, seenValues);
+  if (value === null || typeof value !== 'object') return false;
+  if (seenValues.has(value)) return false;
+  seenValues.add(value);
+
+  if (Array.isArray(value)) {
+    return value.some((entry) => optionalInValue(entry, seenSchemas, seenValues));
+  }
+  if (value instanceof Map || value instanceof Set) {
+    return [...value.values()].some((entry) => optionalInValue(entry, seenSchemas, seenValues));
+  }
+  return Object.values(value).some((entry) => optionalInValue(entry, seenSchemas, seenValues));
+}
+
+function isZodSchema(value: unknown): value is z.ZodTypeAny {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'safeParse' in value &&
+    typeof value.safeParse === 'function' &&
+    'isOptional' in value &&
+    typeof value.isOptional === 'function'
+  );
+}
+
 /**
  * The real OpenAI Responses API transport. Codex-owned: this is the only code
  * in the system that needs a live API key, which is exactly why it is the only
@@ -209,40 +265,64 @@ export type ModelTransport = (req: ModelTransportRequest) => Promise<ModelTransp
  * SDK construction or network work: this transport is an exported value and a
  * direct caller would otherwise never meet the allowlist at all.
  *
- * TODO(codex): implement with the OpenAI SDK (`openai` is already a dependency),
- * BELOW the guard.
- *  - `client.responses.create({ model: req.model, ... })`.
- *  - INPUT: system message = `req.system` plus, when `req.repairNudge` is
- *    present (retry only), that nudge appended as a final system line. User
- *    message = `req.delimitedItem` VERBATIM.
- *  - NO TOOLS. Do not pass `tools`, do not enable web search / code interpreter
- *    / file search (hard constraint 1: reviewers get no tools and no network).
- *  - STRUCTURED OUTPUT: constrain the response to `req.schema` — convert it to
- *    JSON Schema and pass it as `text.format = { type: 'json_schema', name:
- *    req.schemaName, schema, strict: true }`. Use the SDK's zod helper if it
- *    accepts the schema; several of ours are `.refine`/`.superRefine`-wrapped,
- *    whose predicates CANNOT be expressed in JSON Schema — so the structural
- *    part is constrained provider-side and the semantic refinements are caught
- *    by `callModel`'s `safeParse`. That split is intended, not a gap.
- *  - TIMEOUT: pass `req.signal` through to the SDK so an aborted call actually
- *    cancels the socket. `callModel` also races the promise, so a transport that
- *    ignores the signal leaks a request but cannot hang the caller.
- *  - RESPONSE: `text` = the raw output text. `modelId` = the model ID the API
- *    ECHOED BACK on the response body (`response.model`), NOT `req.model` — the
- *    point of the field is to record what actually ran. `tokensIn`/`tokensOut`
- *    from `response.usage`; omit any field the API did not report.
- *  - ERRORS: let SDK errors reject. Do not catch-and-return an empty string;
- *    "the provider 500'd" and "the model returned `''`" are different failures
- *    and `callModel` reports them differently.
+ * One Responses API request is made for the supplied attempt. All-required
+ * schemas use strict Structured Outputs through `zodTextFormat`. Schemas that
+ * contain `.optional()` use the narrower JSON-object fallback described below,
+ * because strict Structured Outputs would silently make those fields required
+ * and change the evidence contract. `callModel` remains the final validator and
+ * the sole owner of retry behaviour in both paths.
  * Reference: doc §7.1, hard constraints 1, 3, 4.
  */
 export const openaiTransport: ModelTransport = async (req) => {
   // Defence in depth: enforced HERE, not only in `callModel`, so a direct caller
   // of the exported transport cannot bypass the allowlist. Must stay first.
   assertRuntimeCompliance(req.model);
-  throw new Error(
-    'TODO(codex): implement the OpenAI Responses API transport (structured output, no tools, abort signal)',
+
+  // The SDK retries selected network and 5xx failures by default. Disable that
+  // hidden inner retry so one transport invocation is exactly one HTTP call;
+  // the bounded retry on invalid model output belongs exclusively to callModel.
+  const client = new OpenAI({ maxRetries: 0, timeout: req.timeoutMs });
+  const hasOptionalFields = schemaContainsOptional(req.schema);
+
+  // Strict Structured Outputs require every property to be required. SDK
+  // 4.104.0 converts `.optional()` properties into required ones, which narrows
+  // contracts such as distractor.evidence and discipline.solver_proof. For only
+  // those schemas, JSON object mode preserves the real Zod contract and
+  // callModel performs the authoritative validation and single repair retry.
+  const format = hasOptionalFields
+    ? ({ type: 'json_object' } as const)
+    : zodTextFormat(req.schema, req.schemaName);
+  const jsonModeInstruction = hasOptionalFields
+    ? 'Return only one valid JSON value matching the requested evidence contract.'
+    : undefined;
+  const instructions = [req.system, jsonModeInstruction, req.repairNudge]
+    .filter((line): line is string => line !== undefined)
+    .join('\n');
+
+  const response = await client.responses.create(
+    {
+      model: req.model,
+      instructions,
+      input: req.delimitedItem,
+      text: { format },
+    },
+    { signal: req.signal },
   );
+
+  // Request compliance is not evidence of served-model compliance. The echoed
+  // ID is the provider's ground truth and is gated before any result can escape.
+  assertRuntimeCompliance(response.model);
+
+  return {
+    text: response.output_text,
+    modelId: response.model,
+    ...(response.usage === null || response.usage === undefined
+      ? {}
+      : {
+          tokensIn: response.usage.input_tokens,
+          tokensOut: response.usage.output_tokens,
+        }),
+  };
 };
 
 export type ModelCallSite = 'orchestrator' | 'adjudication' | 'viva';
