@@ -2,10 +2,8 @@
  * LA FORJA — history re-run / non-regression spec (doc §5; gate §13.3).
  *
  * CONVENTION (Claude/Codex split): reRunCheck() and reRunHistory() in
- * src/core/checks.ts are CODEX-owned and currently throw, so every suite here is
- * `describe.skip` with a REAL, fully written body — the assertions ARE the
- * specification, they typecheck today, and they run the moment Codex removes the
- * `.skip`. Nothing here is a placeholder; the skipped suites are the punch-list.
+ * src/core/checks.ts are CODEX-owned. These executable assertions are the
+ * specification for the implemented history engine and its fail-closed gate.
  *
  * This file is the proof behind the only guarantee text the project is allowed to
  * use (doc §5):
@@ -358,7 +356,7 @@ describe('check taxonomy — (reviewerType, verificationKind) fixes the class', 
 // ---------------------------------------------------------------------------
 // THE headline test — deterministic checks cannot regress (doc §5, gate §13.3).
 // ---------------------------------------------------------------------------
-describe.skip('reRunCheck — deterministic class: STRICT non-regression', () => {
+describe('reRunCheck — deterministic class: STRICT non-regression', () => {
   it('passes on the v2 that fixes the invariant that broke v1', () => {
     // v1 marked 1/6; the bounded solver recomputes 1/11 ⇒ the check was recorded.
     // v2 marks 1/11 ⇒ re-running the SAME invariant now passes.
@@ -429,7 +427,7 @@ describe.skip('reRunCheck — deterministic class: STRICT non-regression', () =>
 // ---------------------------------------------------------------------------
 // Counterexample class — the construction is RE-EXECUTED on v2.
 // ---------------------------------------------------------------------------
-describe.skip('reRunCheck — counterexample class: the construction is re-executed', () => {
+describe('reRunCheck — counterexample class: the construction is re-executed', () => {
   it('regresses while both readings still yield different answers (the demo item v1)', () => {
     const outcome = reRunCheck(AMBIGUITY_CHECK, DEMO_V1);
 
@@ -469,7 +467,7 @@ describe.skip('reRunCheck — counterexample class: the construction is re-execu
 // ---------------------------------------------------------------------------
 // Semantic class — re-adjudicated, NEVER an absolute guarantee.
 // ---------------------------------------------------------------------------
-describe.skip('reRunCheck — semantic class: re-adjudicated, never a hard guarantee', () => {
+describe('reRunCheck — semantic class: re-adjudicated, never a hard guarantee', () => {
   it('always returns "readjudicated", whatever the new version looks like', () => {
     for (const version of [DEMO_V1, DEMO_V2_STILL_AMBIGUOUS, DEMO_V2_REPAIRED]) {
       const outcome = reRunCheck(SEMANTIC_CHECK, version);
@@ -525,7 +523,7 @@ describe.skip('reRunCheck — semantic class: re-adjudicated, never a hard guara
 // ---------------------------------------------------------------------------
 // reRunHistory — the FULL history, every version, nothing silently dropped.
 // ---------------------------------------------------------------------------
-describe.skip('reRunHistory — the full history is executed on every version', () => {
+describe('reRunHistory — the full history is executed on every version', () => {
   it('produces exactly one outcome per recorded check, in order', () => {
     const summary = reRunHistory(DEMO_HISTORY, DEMO_V2_REPAIRED);
 
@@ -634,7 +632,7 @@ const UNKNOWN_INVARIANT_CHECK: RecordedCheck = {
   invariantId: 'invariant_that_does_not_exist',
 };
 
-describe.skip('fail-closed — inconclusive deterministic/counterexample re-runs block publish', () => {
+describe('fail-closed — inconclusive deterministic/counterexample re-runs block publish', () => {
   it('returns "inconclusive" when the recorded executor cannot be re-run', () => {
     const outcome = reRunCheck(UNRUNNABLE_SOLVER_CHECK, DICE_V2_REPAIRED);
 
@@ -709,7 +707,7 @@ describe.skip('fail-closed — inconclusive deterministic/counterexample re-runs
 // re-run crashed after two checks": both produce a short outcome list and no
 // regression. The batch record is what answers doc §5 and gate question 3.
 // ---------------------------------------------------------------------------
-describe.skip('HistoryRunBatch — completeness gates HISTORY_CLEAN', () => {
+describe('HistoryRunBatch — completeness gates HISTORY_CLEAN', () => {
   it('an empty history is COMPLETE and does not block', () => {
     const batch = reRunHistory([], DEMO_V2_REPAIRED);
 
@@ -783,7 +781,7 @@ describe.skip('HistoryRunBatch — completeness gates HISTORY_CLEAN', () => {
 
 /**
  * The dispatch rule the state machine must honour, written once so the suites
- * above assert the same thing the TODO(codex) spec in src/core/checks.ts states:
+ * above assert the same thing the implementation contract in src/core/checks.ts states:
  * HISTORY_CLEAN needs a complete batch, every expected check accounted for, and
  * no blocking outcome.
  */
