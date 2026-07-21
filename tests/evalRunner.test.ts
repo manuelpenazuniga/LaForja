@@ -21,14 +21,17 @@
  * whole eval worthless. The baseline-fairness suite is enforceable TODAY through
  * the implemented `runGauntlet`, so it is not skipped.
  *
- * CONVENTION (Claude/Codex split): suites targeting Codex-owned stubs are
- * written IN FULL and marked `describe.skip` — they are the punch-list. Suites
- * covering implemented code (the artifact gate, the split guard, the declarative
- * tables, baseline fairness) stay enabled and must pass today.
+ * Every suite is live. Model and filesystem boundaries are injected, so the
+ * complete runner contract is verified offline without producing submission
+ * artifacts or reaching a network transport.
  */
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Citation, ReviewerType } from '@/core/types';
+import type { ModelCallArgs, ModelCallResult } from '@/openai/client';
 import type { AdjudicatedCheck } from '@/reviewers/adjudication';
 import {
   DEFAULT_EVAL_DEPS,
@@ -71,6 +74,7 @@ import {
   runGauntlet,
   toDelimitedItem,
   type GauntletDeps,
+  type GeneralReviewerCaller,
   type OrchestratedReviewer,
   type RawItem,
   type ReviewerFn,
@@ -327,6 +331,33 @@ function makeGauntletDeps(overrides: Partial<GauntletDeps> = {}): GauntletDeps {
   };
 }
 
+interface BaselineCallerFake {
+  call: GeneralReviewerCaller;
+  calls: ModelCallArgs<unknown>[];
+}
+
+/** A schema-valid, offline model caller that preserves the production call contract. */
+function baselineCallerFake(contract: unknown): BaselineCallerFake {
+  const calls: ModelCallArgs<unknown>[] = [];
+  const call = (async <T>(args: ModelCallArgs<T>): Promise<ModelCallResult<T>> => {
+    calls.push(args as ModelCallArgs<unknown>);
+    const data = args.schema.parse(contract);
+    return {
+      data,
+      raw: JSON.stringify(contract),
+      modelId: args.model,
+      modelFamilyOk: true,
+      latencyMs: 12,
+      tokensIn: 100,
+      tokensOut: 40,
+      promptVersion: args.promptVersion,
+      promptHash: 'sha256:baseline-fake',
+      schemaValid: true,
+    };
+  }) as GeneralReviewerCaller;
+  return { call, calls };
+}
+
 function outcomeFor(
   outcomes: readonly ReviewerOutcome[],
   reviewerType: OrchestratedReviewer,
@@ -415,19 +446,38 @@ describe('eval artifact gate — model compliance is read out of the reports, ex
 
   it('writeResults refuses the forged report BEFORE touching the filesystem', async () => {
     const forged = makeReport({ raw: [{ modelId: FORBIDDEN_MODEL }] });
-    await expect(writeResults([forged])).rejects.toThrow(/Refusing to write eval results/i);
-    // Not the persistence stub: the run never got that far.
-    await expect(writeResults([forged])).rejects.not.toThrow(/TODO\(codex\)/);
+    const destination = await mkdtemp(join(tmpdir(), 'forja-eval-refusal-'));
+    try {
+      expect(await readdir(destination)).toEqual([]);
+      await expect(writeResults([forged], destination)).rejects.toThrow(
+        /Refusing to write eval results/i,
+      );
+      expect(await readdir(destination)).toEqual([]);
+    } finally {
+      await rm(destination, { recursive: true, force: true });
+    }
   });
 
   /**
    * The complement, and the reason it is worth a test: it proves the gate is
-   * ORDERED first and that a compliant set passes THROUGH it. The rejection here
-   * is the persistence stub, i.e. the punch-list marker — not a refusal.
+   * ORDERED first and that a compliant set passes THROUGH it into an injected
+   * destination, never the directory that holds measured submission results.
    */
-  it('lets a compliant report set through the gate (persistence itself is still a Codex stub)', async () => {
-    await expect(writeResults([makeReport()])).rejects.toThrow(/TODO\(codex\)/);
-    expect(RESULTS_DIR).toBe('eval/results');
+  it('writes a compliant report set to the injected destination', async () => {
+    const report = makeReport();
+    const destination = await mkdtemp(join(tmpdir(), 'forja-eval-write-'));
+    try {
+      await expect(writeResults([report], destination)).resolves.toBeUndefined();
+      const artifactName = '2026-07-21T00-00-00-000Z-gauntlet-run1.json';
+      expect((await readdir(destination)).sort()).toEqual([artifactName, 'summary.md']);
+      expect(JSON.parse(await readFile(join(destination, artifactName), 'utf8'))).toEqual(report);
+      expect(await readFile(join(destination, 'summary.md'), 'utf8')).toContain(
+        '| gauntlet | 1 | 11 | 12 | 1 | 7 | 8 |',
+      );
+      expect(RESULTS_DIR).toBe('eval/results');
+    } finally {
+      await rm(destination, { recursive: true, force: true });
+    }
   });
 });
 
@@ -706,28 +756,52 @@ describe('single general-reviewer baseline — the comparison must be fair', () 
 });
 
 // ===========================================================================
-// SKIPPED SUITES — Codex-owned stubs. Written in full; this is the punch-list.
+// IMPLEMENTED EVAL RUNNER SUITES
 // ===========================================================================
 
-describe.skip('reviewGeneralBaseline (Codex stub)', () => {
+describe('reviewGeneralBaseline', () => {
   it('is wired as the default general reviewer and performs one call with its own contract', async () => {
     const { reviewGeneralBaseline, DEFAULT_GAUNTLET_DEPS } = await import('@/reviewers/orchestrator');
     expect(DEFAULT_GAUNTLET_DEPS.reviewGeneral).toBe(reviewGeneralBaseline);
 
-    const contract = await reviewGeneralBaseline(toDelimitedItem(RAW_ITEM), REVIEWER_MODEL);
+    const fake = baselineCallerFake({
+      defect_type: 'ambiguity',
+      evidence: 'The conditioning clause permits two readings.',
+    });
+    const delimitedItem = toDelimitedItem(RAW_ITEM);
+    const contract = await reviewGeneralBaseline(
+      delimitedItem,
+      REVIEWER_MODEL,
+      undefined,
+      fake.call,
+    );
     expect(contract).toMatchObject({
       defect_type: expect.any(String),
       evidence: expect.any(String),
+    });
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]).toMatchObject({
+      model: REVIEWER_MODEL,
+      delimitedItem,
+      reviewerType: GENERAL_REVIEWER,
+      timeoutMs: GENERAL_REVIEWER_TIMEOUT_MS,
     });
   });
 
   it('declares a defect_type drawn from the four labeled types, so it can be scored', async () => {
     const { reviewGeneralBaseline } = await import('@/reviewers/orchestrator');
+    const fake = baselineCallerFake({
+      defect_type: 'factual_error',
+      evidence: 'The marked key conflicts with the calculation.',
+    });
     const contract = (await reviewGeneralBaseline(
       toDelimitedItem(RAW_ITEM),
       REVIEWER_MODEL,
+      undefined,
+      fake.call,
     )) as { defect_type: string };
     expect(Object.keys(DEFECT_TYPE_REVIEWERS)).toContain(contract.defect_type);
+    expect(fake.calls).toHaveLength(1);
   });
 });
 
@@ -735,7 +809,7 @@ describe.skip('reviewGeneralBaseline (Codex stub)', () => {
  * ATTRIBUTION. The rule that stops a finding of the right shape about the wrong
  * defect from being counted as a detection.
  */
-describe.skip('claimedDefectTypes (Codex stub)', () => {
+describe('claimedDefectTypes', () => {
   it('attributes a specialist by its reviewer identity', () => {
     expect(claimedDefectTypes(makeCheck({ reviewerType: 'discipline' }))).toEqual(['factual_error']);
     expect(claimedDefectTypes(makeCheck({ reviewerType: 'ambiguity' }))).toEqual(['ambiguity']);
@@ -781,7 +855,7 @@ describe.skip('claimedDefectTypes (Codex stub)', () => {
   });
 });
 
-describe.skip('isDefectHit / countDefectsFound (Codex stubs)', () => {
+describe('isDefectHit / countDefectsFound', () => {
   it('counts an accepted, schema-valid finding of the RIGHT type as a hit', () => {
     const check = makeCheck({ reviewerType: 'ambiguity', status: 'accepted', schemaValid: true });
     expect(isDefectHit(AMBIGUOUS_ITEM, check)).toBe(true);
@@ -877,7 +951,7 @@ describe.skip('isDefectHit / countDefectsFound (Codex stubs)', () => {
  * everything would score a perfect detection rate and be useless to a student,
  * and this counter is the only thing in the report that says so.
  */
-describe.skip('countFalsePositivesOnClean (Codex stub)', () => {
+describe('countFalsePositivesOnClean', () => {
   it('counts ANY accepted, schema-valid finding on a clean item as a false positive', () => {
     expect(countFalsePositivesOnClean(CLEAN_ITEM, [makeCheck({ status: 'accepted' })])).toBe(1);
   });
@@ -930,7 +1004,7 @@ describe.skip('countFalsePositivesOnClean (Codex stub)', () => {
   });
 });
 
-describe.skip('percentile (Codex stub)', () => {
+describe('percentile', () => {
   const samples = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
   it('computes nearest-rank p50 and p95', () => {
@@ -962,7 +1036,7 @@ describe.skip('percentile (Codex stub)', () => {
  * counts AGAINST precision — never dropped from the denominator, because that
  * would turn a fabricated source into a free pass.
  */
-describe.skip('tallyCounts — citation precision (Codex stub)', () => {
+describe('tallyCounts — citation precision', () => {
   it('counts a resolving citation with a matching excerpt as precise', () => {
     const counts = tallyCounts(
       [FACTUAL_ITEM],
@@ -1011,7 +1085,7 @@ describe.skip('tallyCounts — citation precision (Codex stub)', () => {
   });
 });
 
-describe.skip('tallyCounts — exact counts (Codex stub)', () => {
+describe('tallyCounts — exact counts', () => {
   /**
    * The full mini-set, hand-computed. 3 planted defects, 2 of them found, and 1
    * false positive on the clean item. These are EXACT COUNTS, which is what the
@@ -1124,7 +1198,7 @@ describe.skip('tallyCounts — exact counts (Codex stub)', () => {
   });
 });
 
-describe.skip('runConfig (Codex stub)', () => {
+describe('runConfig', () => {
   it('returns a report carrying the exact counts for the canned results', async () => {
     const report = await runConfig('gauntlet', 1, 'holdout', makeEvalDeps());
     expect(report.config).toBe('gauntlet');
@@ -1271,7 +1345,7 @@ describe.skip('runConfig (Codex stub)', () => {
   });
 });
 
-describe.skip('DEFAULT_EVAL_DEPS (Codex stubs)', () => {
+describe('DEFAULT_EVAL_DEPS', () => {
   it('loads and validates the labeled smoke items off disk', async () => {
     const holdout = await DEFAULT_EVAL_DEPS.loadSmokeItems('holdout');
     expect(holdout).toHaveLength(8);

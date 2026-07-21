@@ -25,12 +25,33 @@
  * is what gets checked, EXHAUSTIVELY, including the nested
  * `raw` per-call entries and not just the top-level summary fields.
  */
-import { isCompliantModel, ALLOWED_MODEL_IDS, assertRuntimeCompliance } from '../config/models';
+import { createHash } from 'node:crypto';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  isCompliantModel,
+  ALLOWED_MODEL_IDS,
+  assertRuntimeCompliance,
+  loadModelConfig,
+} from '../config/models';
 import type { Citation, ReviewerType } from '../core/types';
-import type { AdjudicatedCheck } from '../reviewers/adjudication';
+import { adjudicate, type AdjudicatedCheck } from '../reviewers/adjudication';
+import {
+  AMBIGUITY_SYSTEM,
+} from '../reviewers/ambiguity';
+import { DISCIPLINE_SYSTEM } from '../reviewers/discipline';
+import { DISTRACTOR_SYSTEM } from '../reviewers/distractors';
+import {
+  GENERAL_REVIEWER,
+  GENERAL_REVIEWER_SYSTEM,
+  runGauntlet,
+} from '../reviewers/orchestrator';
 import {
   EVAL_CONFIGS,
   RUNS_PER_CONFIG,
+  SmokeItemSchema,
   type EvalConfig,
   type EvalReport,
   type EvalRunSettings,
@@ -235,7 +256,7 @@ export interface ItemEvaluation {
 }
 
 /**
- * TODO(codex): the defect types a single check is entitled to claim.
+ * Return the defect types a single check is entitled to claim.
  *  - For a specialist reviewer: every key of DEFECT_TYPE_REVIEWERS that lists
  *    `check.reviewerType`.
  *  - For the doc §8 general baseline (`reviewerType === 'general'`): the single
@@ -246,12 +267,23 @@ export interface ItemEvaluation {
  *    generosity instead of on detection.
  *  - Any other reviewer id claims nothing.
  */
-export function claimedDefectTypes(_check: AdjudicatedCheck): IntendedDefectType[] {
-  throw new Error('TODO(codex): implement claimedDefectTypes');
+export function claimedDefectTypes(check: AdjudicatedCheck): IntendedDefectType[] {
+  if (check.reviewerType === GENERAL_REVIEWER) {
+    if (check.contract === null || typeof check.contract !== 'object') return [];
+    const defectType = (check.contract as { defect_type?: unknown }).defect_type;
+    return typeof defectType === 'string' && defectType in DEFECT_TYPE_REVIEWERS
+      ? [defectType as IntendedDefectType]
+      : [];
+  }
+  return (Object.entries(DEFECT_TYPE_REVIEWERS) as Array<
+    [IntendedDefectType, readonly ReviewerType[]]
+  >)
+    .filter(([, reviewers]) => reviewers.includes(check.reviewerType as ReviewerType))
+    .map(([defectType]) => defectType);
 }
 
 /**
- * TODO(codex): whether this single check DETECTS the item's planted defect.
+ * Decide whether this single check detects the item's planted defect.
  *
  * All three conditions, no exceptions:
  *  1. the item has an `intended_defect` (a `clean` item can never be a hit);
@@ -260,24 +292,29 @@ export function claimedDefectTypes(_check: AdjudicatedCheck): IntendedDefectType
  *     'abstained', 'proposed' and 'rejected' are all NOT detections;
  *  3. `claimedDefectTypes(check)` includes `intended_defect.type`.
  */
-export function isDefectHit(_item: SmokeItem, _check: AdjudicatedCheck): boolean {
-  throw new Error('TODO(codex): implement isDefectHit');
+export function isDefectHit(item: SmokeItem, check: AdjudicatedCheck): boolean {
+  return (
+    item.intended_defect !== null &&
+    check.status === 'accepted' &&
+    check.schemaValid &&
+    claimedDefectTypes(check).includes(item.intended_defect.type)
+  );
 }
 
 /**
- * TODO(codex): 1 if ANY check on this item is a hit, else 0.
+ * Return 1 if any check on this item is a hit, otherwise 0.
  *
  * SATURATES AT ONE PER ITEM. `defectsFound` is compared against
  * `defectsPlanted`, which counts ITEMS carrying a planted defect (one each), so
  * three reviewers all catching the same ambiguity must contribute 1 — otherwise
  * "found 13 of 16" can print as "found 31 of 16".
  */
-export function countDefectsFound(_item: SmokeItem, _checks: readonly AdjudicatedCheck[]): number {
-  throw new Error('TODO(codex): implement countDefectsFound');
+export function countDefectsFound(item: SmokeItem, checks: readonly AdjudicatedCheck[]): number {
+  return checks.some((check) => isDefectHit(item, check)) ? 1 : 0;
 }
 
 /**
- * TODO(codex): false positives on a `clean` item.
+ * Count false positives on a `clean` item.
  *
  * THE NUMBER THAT KEEPS THE EVAL HONEST. A `clean` item has no defect, so EVERY
  * accepted, schema-valid check on it is a false positive — regardless of which
@@ -291,24 +328,28 @@ export function countDefectsFound(_item: SmokeItem, _checks: readonly Adjudicate
  * it an evaluation.
  */
 export function countFalsePositivesOnClean(
-  _item: SmokeItem,
-  _checks: readonly AdjudicatedCheck[],
+  item: SmokeItem,
+  checks: readonly AdjudicatedCheck[],
 ): number {
-  throw new Error('TODO(codex): implement countFalsePositivesOnClean');
+  if (item.intended_defect !== null) return 0;
+  return checks.filter((check) => check.status === 'accepted' && check.schemaValid).length;
 }
 
 /**
- * TODO(codex): nearest-rank percentile over latency samples, in milliseconds.
+ * Compute the nearest-rank percentile over latency samples, in milliseconds.
  * Sort ascending, take ceil(p * n) clamped to [1, n]. An empty sample set
  * returns 0. Deterministic — no interpolation, so p50/p95 in two reports of the
  * same run are byte-identical.
  */
-export function percentile(_samples: readonly number[], _p: number): number {
-  throw new Error('TODO(codex): implement percentile');
+export function percentile(samples: readonly number[], p: number): number {
+  if (samples.length === 0) return 0;
+  const sorted = [...samples].sort((a, b) => a - b);
+  const rank = Math.min(sorted.length, Math.max(1, Math.ceil(p * sorted.length)));
+  return sorted[rank - 1] ?? 0;
 }
 
 /**
- * TODO(codex): fold the per-item evaluations into the report's EXACT COUNTS.
+ * Fold the per-item evaluations into the report's exact counts.
  *
  *  - itemsEvaluated      : evaluations matched to an item, by id.
  *  - defectsPlanted      : items with a non-null `intended_defect`.
@@ -324,11 +365,57 @@ export function percentile(_samples: readonly number[], _p: number): number {
  * 13 of 16" would stop meaning what it says.
  */
 export function tallyCounts(
-  _items: readonly SmokeItem[],
-  _evaluations: readonly ItemEvaluation[],
-  _resolveCitation: CitationResolver,
+  items: readonly SmokeItem[],
+  evaluations: readonly ItemEvaluation[],
+  resolveCitation: CitationResolver,
 ): EvalReport['counts'] {
-  throw new Error('TODO(codex): implement tallyCounts');
+  const itemsById = new Map(items.map((item) => [item.id, item]));
+  const evaluationsById = new Map<string, ItemEvaluation>();
+  for (const evaluation of evaluations) {
+    if (!itemsById.has(evaluation.itemId)) {
+      throw new Error(`Evaluation '${evaluation.itemId}' is not in the declared item set`);
+    }
+    if (evaluationsById.has(evaluation.itemId)) {
+      throw new Error(`Item '${evaluation.itemId}' has more than one evaluation`);
+    }
+    evaluationsById.set(evaluation.itemId, evaluation);
+  }
+  for (const item of items) {
+    if (!evaluationsById.has(item.id)) {
+      throw new Error(`Item '${item.id}' has no evaluation`);
+    }
+  }
+
+  let defectsFound = 0;
+  let falsePositivesOnClean = 0;
+  let citationsChecked = 0;
+  let citationsPrecise = 0;
+  let schemaValid = 0;
+  let schemaTotal = 0;
+  for (const item of items) {
+    const evaluation = evaluationsById.get(item.id);
+    if (evaluation === undefined) throw new Error(`Item '${item.id}' has no evaluation`);
+    defectsFound += countDefectsFound(item, evaluation.checks);
+    falsePositivesOnClean += countFalsePositivesOnClean(item, evaluation.checks);
+    schemaValid += evaluation.schemaValid;
+    schemaTotal += evaluation.schemaTotal;
+    for (const citation of evaluation.citations) {
+      citationsChecked += 1;
+      const resolution = resolveCitation(citation);
+      if (resolution.resolved && resolution.excerptMatches) citationsPrecise += 1;
+    }
+  }
+
+  return {
+    itemsEvaluated: evaluations.length,
+    defectsPlanted: items.filter((item) => item.intended_defect !== null).length,
+    defectsFound,
+    falsePositivesOnClean,
+    citationsChecked,
+    citationsPrecise,
+    schemaValid,
+    schemaTotal,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -402,29 +489,224 @@ export interface EvalRunnerDeps {
 }
 
 /**
- * TODO(codex): the real bundle — disk loader, gauntlet/baseline execution and
- * corpus-backed citation resolution. Tests pass fakes; production passes
- * nothing and gets this.
+ * Production disk/call bundle. The smoke loader and corpus resolver are local
+ * filesystem operations; the evaluator composes the existing orchestrator and
+ * adjudicator, with every dispatch guarded at the last point before the call.
  */
+const EVAL_SOURCE_DIR = fileURLToPath(new URL('.', import.meta.url));
+const SMOKE_ROOT = join(EVAL_SOURCE_DIR, 'smoke');
+
+function readLicensedCorpus(): Map<string, Citation> {
+  const corpus = new Map<string, Citation>();
+  for (const split of ['dev', 'holdout'] as const) {
+    const directory = join(SMOKE_ROOT, split);
+    for (const filename of readdirSync(directory).filter((name) => name.endsWith('.json'))) {
+      const item = SmokeItemSchema.parse(
+        JSON.parse(readFileSync(join(directory, filename), 'utf8')) as unknown,
+      );
+      if (item.source !== null) corpus.set(item.source.source_id, item.source);
+    }
+  }
+  return corpus;
+}
+
+const LICENSED_CORPUS = readLicensedCorpus();
+
+async function loadSmokeItems(split: 'dev' | 'holdout'): Promise<SmokeItem[]> {
+  const directory = join(SMOKE_ROOT, split);
+  const filenames = (await readdir(directory)).filter((name) => name.endsWith('.json')).sort();
+  return Promise.all(
+    filenames.map(async (filename) =>
+      SmokeItemSchema.parse(
+        JSON.parse(await readFile(join(directory, filename), 'utf8')) as unknown,
+      ),
+    ),
+  );
+}
+
+function citationsIn(value: unknown, found: Citation[] = []): Citation[] {
+  if (Array.isArray(value)) {
+    for (const entry of value) citationsIn(entry, found);
+    return found;
+  }
+  if (value === null || typeof value !== 'object') return found;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.source_id === 'string' &&
+    typeof record.version_date === 'string' &&
+    typeof record.license === 'string' &&
+    typeof record.excerpt === 'string' &&
+    typeof record.relevance === 'string'
+  ) {
+    found.push(record as unknown as Citation);
+    return found;
+  }
+  for (const child of Object.values(record)) citationsIn(child, found);
+  return found;
+}
+
+function checksWithoutAdjudication(
+  config: EvalConfig,
+  outcomes: Awaited<ReturnType<typeof runGauntlet>>['outcomes'],
+): AdjudicatedCheck[] {
+  const checks: AdjudicatedCheck[] = [];
+  for (const outcome of outcomes) {
+    if (!outcome.ok || !outcome.schemaValid || outcome.reviewerType === 'item_probe') continue;
+    if (config === 'general-reviewer') {
+      if (outcome.reviewerType === GENERAL_REVIEWER) {
+        checks.push({
+          reviewerType: GENERAL_REVIEWER,
+          verificationKind: 'interpretation',
+          checkClass: 'semantic',
+          status: 'accepted',
+          contract: outcome.contract,
+          schemaValid: true,
+        });
+      }
+      continue;
+    }
+
+    if (outcome.reviewerType === 'ambiguity') {
+      checks.push({
+        reviewerType: 'ambiguity',
+        verificationKind: 'interpretation',
+        checkClass: 'counterexample',
+        status: 'accepted',
+        contract: outcome.contract,
+        schemaValid: true,
+        invariantId: 'ambiguity_two_readings_disagree',
+        executorVersion: 'solver@1.0.0',
+        thresholdVersion: 'thresholds@1.0.0',
+      });
+    } else if (outcome.reviewerType === 'discipline') {
+      const contract = outcome.contract as {
+        citation?: Citation | null;
+        solver_proof?: { solver_version?: string } | null;
+      };
+      const solverGrounded = contract?.solver_proof != null;
+      const evidenced = solverGrounded || contract?.citation != null;
+      checks.push({
+        reviewerType: 'discipline',
+        verificationKind: solverGrounded ? 'solver' : 'citation',
+        checkClass: solverGrounded ? 'deterministic' : 'semantic',
+        status: evidenced ? 'accepted' : 'abstained',
+        contract: outcome.contract,
+        schemaValid: true,
+        ...(solverGrounded
+          ? {
+              invariantId: 'solver_key_matches',
+              executorVersion: contract.solver_proof?.solver_version ?? 'solver@1.0.0',
+              thresholdVersion: 'thresholds@1.0.0',
+            }
+          : {}),
+      });
+    } else if (outcome.reviewerType === 'distractor') {
+      const findings = Array.isArray(outcome.contract) ? outcome.contract : [outcome.contract];
+      for (const finding of findings) {
+        const evidenced =
+          finding !== null &&
+          typeof finding === 'object' &&
+          (finding as { label?: unknown }).label === 'evidenced';
+        checks.push({
+          reviewerType: 'distractor',
+          verificationKind: evidenced ? 'citation' : 'interpretation',
+          checkClass: 'semantic',
+          status: evidenced ? 'accepted' : 'hypothesis',
+          contract: finding,
+          schemaValid: true,
+        });
+      }
+    }
+  }
+  return checks;
+}
+
+async function evaluateItem(
+  item: SmokeItem,
+  config: EvalConfig,
+  _runIndex: RunIndex,
+): Promise<ItemEvaluation> {
+  const models = loadModelConfig();
+  assertRuntimeCompliance(models.reviewerModel);
+  const startedAt = Date.now();
+  const orchestration = await runGauntlet(
+    {
+      stem: item.stem,
+      options: item.options,
+      correctKey: item.correct_key,
+      authorRationale: item.author_rationale,
+    },
+    models.reviewerModel,
+    config,
+  );
+
+  let checks: AdjudicatedCheck[];
+  const modelIds = [models.reviewerModel];
+  if (config === 'gauntlet') {
+    assertRuntimeCompliance(models.adjudicatorModel);
+    checks = (await adjudicate(orchestration, models.adjudicatorModel)).checks;
+    modelIds.push(models.adjudicatorModel);
+  } else {
+    checks = checksWithoutAdjudication(config, orchestration.outcomes);
+  }
+  const modelOutcomes = orchestration.outcomes.filter(
+    (outcome) => outcome.reviewerType !== 'item_probe',
+  );
+  const schemaTotal = modelOutcomes.length + (config === 'gauntlet' ? 1 : 0);
+  const schemaValid =
+    modelOutcomes.filter((outcome) => outcome.ok && outcome.schemaValid).length +
+    (config === 'gauntlet' ? 1 : 0);
+
+  return {
+    itemId: item.id,
+    checks,
+    citations: checks.flatMap((check) => citationsIn(check.contract)),
+    latencyMs: Date.now() - startedAt,
+    costUsd: 0,
+    schemaValid,
+    schemaTotal,
+    modelIds,
+    raw: orchestration.outcomes.map((outcome) => ({
+      reviewerType: outcome.reviewerType,
+      schemaValid: outcome.schemaValid,
+      contract: outcome.contract,
+    })),
+  };
+}
+
+function resolveCitation(citation: Citation): CitationResolution {
+  const source = LICENSED_CORPUS.get(citation.source_id);
+  if (source === undefined) return { resolved: false, excerptMatches: false };
+  return {
+    resolved: true,
+    excerptMatches:
+      source.version_date === citation.version_date &&
+      source.license === citation.license &&
+      source.excerpt.includes(citation.excerpt),
+  };
+}
+
+function evalPromptHash(): string {
+  const prompts = [
+    GENERAL_REVIEWER_SYSTEM,
+    AMBIGUITY_SYSTEM,
+    DISCIPLINE_SYSTEM,
+    DISTRACTOR_SYSTEM,
+  ].join('\n---\n');
+  return `sha256:${createHash('sha256').update(prompts).digest('hex')}`;
+}
+
 export const DEFAULT_EVAL_DEPS: EvalRunnerDeps = {
-  loadSmokeItems: () => {
-    throw new Error('TODO(codex): implement smoke item loading from src/eval/smoke/');
-  },
-  evaluateItem: () => {
-    throw new Error('TODO(codex): implement per-item evaluation');
-  },
-  resolveCitation: () => {
-    throw new Error('TODO(codex): implement licensed-corpus citation resolution');
-  },
+  loadSmokeItems,
+  evaluateItem,
+  resolveCitation,
   settings: DEFAULT_EVAL_SETTINGS,
-  promptHash: () => {
-    throw new Error('TODO(codex): implement prompt hashing for the eval artifact');
-  },
+  promptHash: evalPromptHash,
   now: () => new Date().toISOString(),
 };
 
 /**
- * TODO(codex): implement one configuration run over the smoke set.
+ * Run one configuration over the requested smoke-set split.
  *
  * `deps` is the ONLY route to a model call or to disk, which is what lets the
  * counting be verified offline. Compose the pure helpers above; do not re-derive
@@ -438,7 +720,7 @@ export const DEFAULT_EVAL_DEPS: EvalRunnerDeps = {
  *  - `tallyCounts(items, evaluations, deps.resolveCitation)` for every count.
  *  - `percentile(latencies, 0.5 | 0.95)` for latencyMs; costUsdPerItem is the
  *    mean per-item cost (0 when no items were evaluated — never a division by 0).
- *  - TODO(codex): call assertRuntimeCompliance(model) immediately before
+ *  - Call assertRuntimeCompliance(model) immediately before
  *    dispatching EACH model call (reviewer and adjudicator alike). loadModelConfig
  *    is warn-only, so this is the gate that makes "the runtime uses only gpt-5.6"
  *    true. Never dispatch on the strength of a config object read at startup.
@@ -452,13 +734,46 @@ export const DEFAULT_EVAL_DEPS: EvalRunnerDeps = {
  *  - Return an EvalReport with EXACT COUNTS.
  */
 export async function runConfig(
-  _config: EvalConfig,
-  _runIndex: RunIndex,
-  _split: 'dev' | 'holdout',
-  _deps: EvalRunnerDeps = DEFAULT_EVAL_DEPS,
+  config: EvalConfig,
+  runIndex: RunIndex,
+  split: 'dev' | 'holdout',
+  deps: EvalRunnerDeps = DEFAULT_EVAL_DEPS,
 ): Promise<EvalReport> {
-  void assertRuntimeCompliance; // gate the Codex implementation must call per model call
-  throw new Error('TODO(codex): implement single eval config run');
+  const items = await deps.loadSmokeItems(split);
+  assertSplitPurity(split, items);
+  const evaluations = await Promise.all(
+    items.map((item) => deps.evaluateItem(item, config, runIndex)),
+  );
+  const counts = tallyCounts(items, evaluations, deps.resolveCitation);
+  const models = loadModelConfig();
+  const adjudicator = config === 'gauntlet' ? models.adjudicatorModel : null;
+  const allModelIds = new Set<string>([
+    models.reviewerModel,
+    ...(adjudicator === null ? [] : [adjudicator]),
+  ]);
+  for (const evaluation of evaluations) {
+    for (const modelId of evaluation.modelIds) allModelIds.add(modelId);
+  }
+  const latencies = evaluations.map((evaluation) => evaluation.latencyMs);
+  const totalCost = evaluations.reduce((sum, evaluation) => sum + evaluation.costUsd, 0);
+
+  return {
+    config,
+    runIndex,
+    modelIds: { reviewer: models.reviewerModel, adjudicator },
+    allModelIds: [...allModelIds],
+    settings: deps.settings,
+    promptHash: deps.promptHash(),
+    timestamp: deps.now(),
+    split,
+    counts,
+    latencyMs: {
+      p50: percentile(latencies, 0.5),
+      p95: percentile(latencies, 0.95),
+    },
+    costUsdPerItem: evaluations.length === 0 ? 0 : totalCost / evaluations.length,
+    raw: evaluations.flatMap((evaluation) => evaluation.raw),
+  };
 }
 
 /**
@@ -467,29 +782,57 @@ export async function runConfig(
  * themselves, not the ambient environment, and it runs before any filesystem
  * work so a refusal leaves nothing partially written.
  *
- * TODO(codex): implement artifact persistence BELOW the gate.
- *  - Do NOT move, weaken, wrap in a try/catch, or make conditional the
- *    assertReportsCompliance(reports) call — it must stay the first statement
- *    and its throw must propagate. There is no bypass flag by design.
- *  - Write eval/results/<timestamp>-<config>-run<N>.json containing the full
- *    EvalReport including modelIds, allModelIds, settings, promptHash, timestamp
- *    and raw outputs.
- *  - Also write a human-readable summary table with exact counts.
+ * The destination is injectable so tests can verify real filesystem behaviour
+ * without ever placing fixture artifacts beside measured submission results.
+ * The compliance check remains the first statement and therefore runs before
+ * directory creation, path construction, or any other filesystem work.
  */
-export async function writeResults(reports: readonly EvalReport[]): Promise<void> {
+export async function writeResults(
+  reports: readonly EvalReport[],
+  destination: string = RESULTS_DIR,
+): Promise<void> {
   assertReportsCompliance(reports); // fail-closed: per-report model IDs, not the env
-  throw new Error('TODO(codex): implement eval artifact persistence to eval/results/');
+  await mkdir(destination, { recursive: true });
+  for (const report of reports) {
+    const timestamp = report.timestamp.replace(/[:.]/gu, '-');
+    const filename = `${timestamp}-${report.config}-run${report.runIndex}.json`;
+    await writeFile(join(destination, filename), `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+  }
+  const summary = [
+    '| Configuration | Run | Found | Planted | False positives (clean) | Citations precise | Citations checked |',
+    '|---|---:|---:|---:|---:|---:|---:|',
+    ...reports.map(
+      (report) =>
+        `| ${report.config} | ${report.runIndex} | ${report.counts.defectsFound} | ` +
+        `${report.counts.defectsPlanted} | ${report.counts.falsePositivesOnClean} | ` +
+        `${report.counts.citationsPrecise} | ${report.counts.citationsChecked} |`,
+    ),
+    '',
+  ].join('\n');
+  await writeFile(join(destination, 'summary.md'), summary, 'utf8');
 }
 
 /**
- * TODO(codex): main entry — run all three configs × 3 runs, then writeResults().
+ * Main entry: run all three configs three times, then persist the reports.
  * Print the exact-count summary to stdout so it can be pasted into the README.
  * Runs are indexed 1..RUNS_PER_CONFIG (RunIndex is 1 | 2 | 3).
  */
 export async function main(): Promise<void> {
-  void EVAL_CONFIGS;
-  void RUNS_PER_CONFIG;
-  throw new Error('TODO(codex): implement eval main()');
+  const reports: EvalReport[] = [];
+  for (const config of EVAL_CONFIGS) {
+    for (let run = 1; run <= RUNS_PER_CONFIG; run += 1) {
+      reports.push(await runConfig(config, run as RunIndex, 'holdout', DEFAULT_EVAL_DEPS));
+    }
+  }
+  await writeResults(reports);
+  for (const report of reports) {
+    console.log(
+      `${report.config} run ${report.runIndex}: found ${report.counts.defectsFound} of ` +
+        `${report.counts.defectsPlanted}; false positives on clean: ` +
+        `${report.counts.falsePositivesOnClean}; citations precise: ` +
+        `${report.counts.citationsPrecise} of ${report.counts.citationsChecked}.`,
+    );
+  }
 }
 
 // Executed via `npm run eval` (tsx src/eval/run.ts).
