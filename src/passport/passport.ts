@@ -25,6 +25,7 @@ import type {
   ReviewerType,
 } from '../core/types';
 import type { HistoryRunBatch, ReadjudicatedVerdict } from '../core/checks';
+import { fromJson, prisma, toJson } from '../db/client';
 
 export interface PassportAttack {
   reviewerType: string;
@@ -158,19 +159,208 @@ export interface PassportDeps {
 }
 
 /**
- * TODO(codex): production wiring — read Item / ItemVersion / Check / Citation /
- * HistoryRunBatch / HistoryReRun / Defense / Passport through `prisma`
- * (src/db/client.ts), crossing every `...Json` column with `fromJson`/`toJson`.
+ * Prisma-backed passport storage. Source loading follows the current published
+ * version while retaining every check from the item's full version lineage;
+ * snapshots are read and written through the JSON boundary and are immutable
+ * once stamped for an (item, version) pair.
  */
 export const DEFAULT_PASSPORT_DEPS: PassportDeps = {
-  loadPassportSource(): Promise<PassportSourceRecord | null> {
-    throw new Error('TODO(codex): implement the Prisma-backed passport source loader');
+  async loadPassportSource(itemId: string): Promise<PassportSourceRecord | null> {
+    const item = await prisma.item.findUnique({
+      where: { id: itemId },
+      include: {
+        session: { select: { pseudonym: true } },
+        versions: {
+          orderBy: { versionNumber: 'asc' },
+          include: {
+            checks: {
+              orderBy: { createdAt: 'asc' },
+              include: { citation: true },
+            },
+            defense: true,
+            historyRunBatch: {
+              orderBy: { startedAt: 'desc' },
+              include: { reRuns: { orderBy: { createdAt: 'asc' } } },
+            },
+          },
+        },
+      },
+    });
+    if (item === null || item.currentVersionId === null) return null;
+
+    const publishedVersion = item.versions.find(
+      (version) => version.id === item.currentVersionId,
+    );
+    if (publishedVersion === undefined) return null;
+
+    const checks = item.versions.flatMap((version) => version.checks);
+    const disciplineCheck = [...checks]
+      .reverse()
+      .find(
+        (check) =>
+          check.reviewerType === 'discipline' &&
+          check.verificationKind === 'citation' &&
+          check.status === 'accepted',
+      );
+
+    let disciplineVerdict: PassportSourceRecord['disciplineVerdict'] = null;
+    if (disciplineCheck !== undefined) {
+      const contract = fromJson<{ verdict?: DisciplineVerdict }>(disciplineCheck.contractJson);
+      if (contract.verdict !== undefined) {
+        const citation = disciplineCheck.citation;
+        disciplineVerdict = {
+          verdict: contract.verdict,
+          citation:
+            citation === null
+              ? null
+              : {
+                  source_id: citation.sourceId,
+                  version_date: citation.versionDate,
+                  license: citation.license,
+                  excerpt: citation.excerpt,
+                  relevance: citation.relevance,
+                },
+        };
+      }
+    }
+
+    const batchRow = publishedVersion.historyRunBatch[0];
+    let historyBatch: HistoryRunBatch | null = null;
+    if (batchRow !== undefined) {
+      const outcomes: HistoryRunBatch['outcomes'] = batchRow.reRuns.map((reRun) => {
+        const details =
+          reRun.detailsJson === null ? undefined : fromJson<unknown>(reRun.detailsJson);
+        const detail =
+          typeof details === 'string'
+            ? details
+            : details !== null && typeof details === 'object' &&
+                typeof (details as { detail?: unknown }).detail === 'string'
+              ? (details as { detail: string }).detail
+              : undefined;
+
+        if (reRun.checkClass === 'semantic') {
+          if (reRun.result === 'readjudicated') {
+            const container = details as
+              | ReadjudicatedVerdict
+              | { verdict?: ReadjudicatedVerdict }
+              | null
+              | undefined;
+            const verdict =
+              container !== null &&
+              container !== undefined &&
+              'verdict' in container
+                ? container.verdict
+                : (container as ReadjudicatedVerdict | null | undefined);
+            if (verdict === null || verdict === undefined) {
+              throw new Error(
+                `Semantic re-run '${reRun.id}' is readjudicated without a verdict`,
+              );
+            }
+            return {
+              originalCheckId: reRun.originalCheckId,
+              checkClass: 'semantic',
+              result: 'readjudicated',
+              verdict,
+              blocksPublish: false,
+              ...(detail === undefined ? {} : { detail }),
+            };
+          }
+          return {
+            originalCheckId: reRun.originalCheckId,
+            checkClass: 'semantic',
+            result: 'inconclusive',
+            blocksPublish: false,
+            ...(detail === undefined ? {} : { detail }),
+          };
+        }
+
+        const checkClass = reRun.checkClass as 'deterministic' | 'counterexample';
+        const result = reRun.result as 'pass' | 'regressed' | 'inconclusive';
+        return {
+          originalCheckId: reRun.originalCheckId,
+          checkClass,
+          result,
+          blocksPublish: result !== 'pass',
+          ...(detail === undefined ? {} : { detail }),
+        };
+      });
+
+      historyBatch = {
+        targetVersionId: batchRow.itemVersionId,
+        expectedCheckCount: batchRow.expectedCheckCount,
+        completedCheckCount: batchRow.completedCheckCount,
+        startedAt: batchRow.startedAt.toISOString(),
+        completedAt: batchRow.completedAt?.toISOString() ?? null,
+        status: batchRow.status as HistoryRunBatch['status'],
+        blocksPublish: batchRow.blocksPublish,
+        outcomes,
+      };
+    }
+
+    return {
+      itemId: item.id,
+      itemState: item.state as ItemState,
+      publishedVersionId: publishedVersion.id,
+      publishedAt: item.updatedAt.toISOString(),
+      authorPseudonym: item.session.pseudonym,
+      provenance: item.provenance,
+      license: item.license,
+      discipline: item.discipline,
+      checks: checks.map((check) => ({
+        id: check.id,
+        reviewerType: check.reviewerType as ReviewerType,
+        checkClass: check.checkClass as CheckClass,
+        status: check.status as CheckStatus,
+        contract: fromJson<unknown>(check.contractJson),
+      })),
+      historyBatch,
+      disciplineVerdict,
+      defense:
+        publishedVersion.defense?.rubricJson === null ||
+        publishedVersion.defense?.rubricJson === undefined
+          ? null
+          : fromJson<DefenseRubric>(publishedVersion.defense.rubricJson),
+      versions: item.versions.map((version) => ({
+        id: version.id,
+        versionNumber: version.versionNumber,
+        ...(version.diffJson === null
+          ? {}
+          : { diff: fromJson<string>(version.diffJson) }),
+      })),
+    };
   },
-  loadStoredPassport(): Promise<Passport | null> {
-    throw new Error('TODO(codex): implement the frozen-snapshot loader');
+  async loadStoredPassport(itemId: string): Promise<Passport | null> {
+    const item = await prisma.item.findUnique({
+      where: { id: itemId },
+      select: { currentVersionId: true },
+    });
+    if (item?.currentVersionId === null || item?.currentVersionId === undefined) return null;
+
+    const stored = await prisma.passport.findUnique({
+      where: {
+        itemId_itemVersionId: { itemId, itemVersionId: item.currentVersionId },
+      },
+      select: { snapshotJson: true },
+    });
+    return stored === null ? null : fromJson<Passport>(stored.snapshotJson);
   },
-  saveSnapshot(): Promise<void> {
-    throw new Error('TODO(codex): implement frozen-snapshot persistence');
+  async saveSnapshot(passport: Passport): Promise<void> {
+    await prisma.passport.upsert({
+      where: {
+        itemId_itemVersionId: {
+          itemId: passport.itemId,
+          itemVersionId: passport.itemVersionId,
+        },
+      },
+      create: {
+        itemId: passport.itemId,
+        itemVersionId: passport.itemVersionId,
+        snapshotJson: toJson(passport),
+        publishedAt: new Date(passport.publishedAt),
+      },
+      // A duplicate stamp is an idempotent no-op: the first snapshot is frozen.
+      update: {},
+    });
   },
 };
 

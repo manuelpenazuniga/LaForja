@@ -69,6 +69,7 @@ import {
   type VivaDeps,
 } from '@/defense/viva';
 import type { DefenseRubric, ItemState, StateEvent } from '@/core/types';
+import type { ModelCallResult } from '@/openai/client';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -249,42 +250,116 @@ async function loadAcceptedFindings(itemVersionId: string): Promise<unknown[]> {
 }
 
 /**
- * TODO(codex): persist the issued questions.
- *
- *  1. Upsert the Defense row for `record.itemVersionId` with
- *     `questionsJson: toJson(record.questions)` and outcome 'pending'.
- *  2. Persist a ModelCall row (callSite 'viva', defenseId = that row) with the
- *     EXACT model id, modelFamilyOk, promptVersion, promptHash, latencyMs and
- *     tokens (hard constraint 3). Thread the ModelCallResult telemetry through
- *     `DefenseDeps` if you need it here — do not re-call the model.
- *  3. Write `record.state` to Item.state when `record.events` is non-empty (the
- *     DEFENSE_RETRY case). The state is already resolved through reduce(); do
- *     not recompute it.
+ * Persist issued questions, their exact call telemetry, and any resolved retry
+ * transition in one transaction. Reissuing questions resets the version's
+ * defense to an ungraded pending row while preserving the one-row-per-version
+ * invariant.
  *
  * Reference: doc §6.3.
  */
-async function recordQuestions(_record: QuestionsRecord): Promise<void> {
-  void toJson;
-  throw new Error('TODO(codex): persist Defense questions + ModelCall row (callSite viva)');
+async function recordQuestions(record: QuestionsRecord): Promise<void> {
+  const telemetry = (
+    record as QuestionsRecord & { telemetry?: ModelCallResult<unknown> }
+  ).telemetry;
+  if (telemetry === undefined) {
+    throw new Error('Defense question telemetry is required for the audit trail');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const defense = await tx.defense.upsert({
+      where: { itemVersionId: record.itemVersionId },
+      create: {
+        itemVersionId: record.itemVersionId,
+        questionsJson: toJson(record.questions),
+        answersJson: null,
+        rubricJson: null,
+        totalScore: null,
+        outcome: 'pending',
+      },
+      update: {
+        questionsJson: toJson(record.questions),
+        answersJson: null,
+        rubricJson: null,
+        totalScore: null,
+        outcome: 'pending',
+      },
+    });
+
+    await tx.modelCall.create({
+      data: {
+        defenseId: defense.id,
+        callSite: 'viva',
+        modelId: telemetry.modelId,
+        modelFamilyOk: telemetry.modelFamilyOk,
+        promptVersion: telemetry.promptVersion,
+        promptHash: telemetry.promptHash,
+        latencyMs: telemetry.latencyMs,
+        tokensIn: telemetry.tokensIn ?? null,
+        tokensOut: telemetry.tokensOut ?? null,
+        costUsd: telemetry.costUsd ?? null,
+        schemaValid: telemetry.schemaValid,
+        rawJson: toJson(telemetry.raw),
+      },
+    });
+
+    if (record.events.length > 0) {
+      await tx.item.update({
+        where: { id: record.itemId },
+        data: { state: record.state },
+      });
+    }
+  });
 }
 
 /**
- * TODO(codex): persist the scored defense.
- *
- *  1. Update the Defense row for `record.itemVersionId`:
- *     answersJson, rubricJson (via toJson — the FULL rubric, inconclusive
- *     included), totalScore = record.rubric.total, outcome = record.outcome.
- *  2. Persist a ModelCall row (callSite 'viva') exactly as above.
- *  3. Write `record.state` to Item.state. The events in `record.events` are
- *     already validated by reduce(); apply the final state, do not re-derive it.
- *
- * DO NOT special-case 'inconclusive' into a rejection anywhere in here: the row
- * records that no verdict was reached, and the item is retryable.
+ * Persist answers, the full audit rubric, exact scoring telemetry, and the
+ * already-resolved lifecycle state atomically. An inconclusive evaluator result
+ * retains its rubric evidence but stores no numeric grade, so infrastructure
+ * failure cannot be mistaken for student failure.
  *
  * Reference: doc §6.3.
  */
-async function recordScoring(_record: ScoringRecord): Promise<void> {
-  throw new Error('TODO(codex): persist Defense rubric + ModelCall row (callSite viva)');
+async function recordScoring(record: ScoringRecord): Promise<void> {
+  const telemetry = (
+    record as ScoringRecord & { telemetry?: ModelCallResult<unknown> }
+  ).telemetry;
+  if (telemetry === undefined) {
+    throw new Error('Defense scoring telemetry is required for the audit trail');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const defense = await tx.defense.update({
+      where: { itemVersionId: record.itemVersionId },
+      data: {
+        answersJson: toJson(record.answers),
+        rubricJson: toJson(record.rubric),
+        totalScore: record.outcome === 'inconclusive' ? null : record.rubric.total,
+        outcome: record.outcome,
+      },
+    });
+
+    await tx.modelCall.create({
+      data: {
+        defenseId: defense.id,
+        callSite: 'viva',
+        modelId: telemetry.modelId,
+        modelFamilyOk: telemetry.modelFamilyOk,
+        promptVersion: telemetry.promptVersion,
+        promptHash: telemetry.promptHash,
+        latencyMs: telemetry.latencyMs,
+        tokensIn: telemetry.tokensIn ?? null,
+        tokensOut: telemetry.tokensOut ?? null,
+        costUsd: telemetry.costUsd ?? null,
+        schemaValid: telemetry.schemaValid,
+        rawJson: toJson(telemetry.raw),
+      },
+    });
+
+    await tx.item.update({
+      where: { id: record.itemId },
+      data: { state: record.state },
+    });
+  });
 }
 
 /** Production wiring. Tests inject fakes through `handleDefense`'s second argument. */

@@ -186,11 +186,48 @@ export interface GauntletDeps {
   allowEvalVariants?: boolean;
 }
 
+/** Prompt version recorded for the doc §8 baseline, exactly like a specialist. */
+export const GENERAL_REVIEWER_PROMPT_VERSION = 'general-baseline-v1';
+
+/**
+ * The baseline's wall-clock budget IS the specialist budget. Declared as an
+ * alias rather than a second number so the two cannot drift apart: a baseline
+ * given less time would lose findings to timeouts and make the gauntlet look
+ * good for a reason that has nothing to do with specialization.
+ */
+export const GENERAL_REVIEWER_TIMEOUT_MS = REVIEWER_TIMEOUT_MS;
+
 /**
  * TODO(codex): implement the doc §8 baseline reviewer in src/reviewers/general.ts
  * (one prompt, one call, its own Zod schema) and point this default at it.
+ *
+ * IT MUST BE A FAIR COMPARISON, because doc §8 commits us to reporting whatever
+ * the numbers turn out to be — "We compared…", win or lose. An unfairly weak
+ * baseline would not make the gauntlet better, it would make the eval worthless.
+ * So the baseline gets, identically:
+ *  - the SAME item serialization: the `delimitedItem` string handed to it is the
+ *    one `toDelimitedItem` produced, byte for byte, with no extra wrap and no
+ *    reduced context;
+ *  - the SAME per-reviewer timeout (GENERAL_REVIEWER_TIMEOUT_MS);
+ *  - the SAME schema discipline: one Zod contract, validated, with the single
+ *    permitted retry (hard constraint 3), and an invalid contract recorded as a
+ *    'schema' failure rather than silently dropped;
+ *  - the SAME model and the same compliance gate at the call boundary.
+ *
+ * The ONE thing it does not get is specialization: one general prompt, one call,
+ * asked to find whatever is wrong with the item — that difference is the whole
+ * experiment, and it must be the ONLY difference.
+ *
+ * Its contract MUST declare `defect_type` (one of the four labeled types:
+ * ambiguity | factual_error | cue_leak | weak_distractor) alongside its
+ * evidence. The specialists are attributed by reviewer identity; a single
+ * undifferentiated call cannot be, so it has to say what it is claiming. Without
+ * that field the eval could only score the baseline by assuming every finding
+ * matches whatever defect was planted — scoring it on generosity instead of on
+ * detection, which is the mirror image of an unfairly weak baseline and just as
+ * dishonest. See `claimedDefectTypes` in src/eval/run.ts.
  */
-const reviewGeneralNotImplemented: ReviewerFn<unknown> = async () => {
+export const reviewGeneralBaseline: ReviewerFn<unknown> = async () => {
   throw new Error('TODO(codex): implement the single general reviewer baseline (doc §8)');
 };
 
@@ -199,7 +236,7 @@ export const DEFAULT_GAUNTLET_DEPS: GauntletDeps = {
   reviewAmbiguity,
   reviewDiscipline,
   reviewDistractors,
-  reviewGeneral: reviewGeneralNotImplemented,
+  reviewGeneral: reviewGeneralBaseline,
   runItemProbe,
 };
 

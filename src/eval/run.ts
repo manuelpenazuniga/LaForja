@@ -26,12 +26,16 @@
  * `raw` per-call entries and not just the top-level summary fields.
  */
 import { isCompliantModel, ALLOWED_MODEL_IDS, assertRuntimeCompliance } from '../config/models';
+import type { Citation, ReviewerType } from '../core/types';
+import type { AdjudicatedCheck } from '../reviewers/adjudication';
 import {
   EVAL_CONFIGS,
   RUNS_PER_CONFIG,
   type EvalConfig,
   type EvalReport,
+  type EvalRunSettings,
   type RunIndex,
+  type SmokeItem,
 } from './types';
 
 /** Repo-root artifact directory (the spec's "/eval/results/"). */
@@ -147,34 +151,311 @@ export function assertReportsCompliance(reports: readonly EvalReport[]): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// SCORING SURFACE (doc §8)
+//
+// The scoring is the part that must be right: it produces the numbers that go
+// in the submission. It is therefore split out of `runConfig` into small pure
+// functions, so the counting can be verified offline against canned reviewer
+// results without any model call. `runConfig` composes them; it does not
+// re-derive them.
+// ---------------------------------------------------------------------------
+
+/** The four labeled defect types (owned by SmokeItemSchema, derived here). */
+export type IntendedDefectType = NonNullable<SmokeItem['intended_defect']>['type'];
+
+/**
+ * WHICH REVIEWER MAY LEGITIMATELY CLAIM WHICH DEFECT.
+ *
+ * THIS TABLE IS THE ANTI-INFLATION RULE. A finding of the right SHAPE about the
+ * WRONG defect is not a detection: an ambiguity contract filed against an item
+ * whose planted defect is a factual error found something else (or nothing), and
+ * counting it would inflate the headline number that goes in the README. A
+ * defect counts as FOUND only when the accepted, schema-valid finding comes from
+ * a reviewer listed here for that defect type.
+ *
+ * `cue_leak` lists TWO reviewers on purpose, and it is the only entry that does:
+ * the labeled fixtures state that a cue leak must be caught by the deterministic
+ * probe (length / lexical overlap) AND is expected to surface as weak
+ * distractors. Both are findings about the SAME planted defect, so either one is
+ * a legitimate hit — this is not a widening of the rule, it is the rule applied
+ * to a defect that two detectors legitimately share.
+ */
+export const DEFECT_TYPE_REVIEWERS = {
+  ambiguity: ['ambiguity'],
+  factual_error: ['discipline'],
+  cue_leak: ['item_probe', 'distractor'],
+  weak_distractor: ['distractor'],
+} as const satisfies Record<IntendedDefectType, readonly ReviewerType[]>;
+
+/**
+ * Whether a citation emitted by a reviewer actually lands in the licensed
+ * corpus. Two independent facts, because they fail for different reasons and a
+ * single boolean would hide which one happened:
+ *  - `resolved`: the `source_id` names a document that exists in the corpus.
+ *  - `excerptMatches`: the quoted excerpt is really present in that document.
+ *
+ * A citation is PRECISE only when both are true. A citation that does not
+ * resolve counts AGAINST precision — it is never simply skipped, because
+ * dropping unresolvable citations from the denominator would turn a fabricated
+ * source into a free pass.
+ */
+export interface CitationResolution {
+  resolved: boolean;
+  excerptMatches: boolean;
+}
+
+/** Offline in tests, corpus-backed in the real run. Never a network call. */
+export type CitationResolver = (citation: Citation) => CitationResolution;
+
+/**
+ * Everything one item's pass produced, already collected. This is the seam the
+ * eval suite feeds canned data through: it sits on the far side of every model
+ * call, so the scoring above it is fully testable offline.
+ */
+export interface ItemEvaluation {
+  itemId: string;
+  /**
+   * The checks this item's pass produced. For 'gauntlet' these are adjudicated;
+   * for the configs that skip adjudication they are the reviewer findings
+   * promoted to checks with the status the code gates assigned.
+   */
+  checks: AdjudicatedCheck[];
+  /** Every citation emitted for this item, by any reviewer. */
+  citations: Citation[];
+  latencyMs: number;
+  costUsd: number;
+  /** Model outputs that were schema-validated, and how many passed. */
+  schemaValid: number;
+  schemaTotal: number;
+  /** Every model id that served a call for this item (compliance evidence). */
+  modelIds: string[];
+  /** Raw model outputs, kept verbatim as evidence. */
+  raw: unknown[];
+}
+
+/**
+ * TODO(codex): the defect types a single check is entitled to claim.
+ *  - For a specialist reviewer: every key of DEFECT_TYPE_REVIEWERS that lists
+ *    `check.reviewerType`.
+ *  - For the doc §8 general baseline (`reviewerType === 'general'`): the single
+ *    type its contract DECLARES in `defect_type`, because the baseline is one
+ *    undifferentiated call and cannot be attributed by reviewer identity. An
+ *    absent or unrecognised `defect_type` claims NOTHING — it must never fall
+ *    back to "matches whatever was planted", which would score the baseline on
+ *    generosity instead of on detection.
+ *  - Any other reviewer id claims nothing.
+ */
+export function claimedDefectTypes(_check: AdjudicatedCheck): IntendedDefectType[] {
+  throw new Error('TODO(codex): implement claimedDefectTypes');
+}
+
+/**
+ * TODO(codex): whether this single check DETECTS the item's planted defect.
+ *
+ * All three conditions, no exceptions:
+ *  1. the item has an `intended_defect` (a `clean` item can never be a hit);
+ *  2. the check is ACCEPTED and `schemaValid` — a valid evidence contract is
+ *     what separates a detection from an assertion, and 'hypothesis',
+ *     'abstained', 'proposed' and 'rejected' are all NOT detections;
+ *  3. `claimedDefectTypes(check)` includes `intended_defect.type`.
+ */
+export function isDefectHit(_item: SmokeItem, _check: AdjudicatedCheck): boolean {
+  throw new Error('TODO(codex): implement isDefectHit');
+}
+
+/**
+ * TODO(codex): 1 if ANY check on this item is a hit, else 0.
+ *
+ * SATURATES AT ONE PER ITEM. `defectsFound` is compared against
+ * `defectsPlanted`, which counts ITEMS carrying a planted defect (one each), so
+ * three reviewers all catching the same ambiguity must contribute 1 — otherwise
+ * "found 13 of 16" can print as "found 31 of 16".
+ */
+export function countDefectsFound(_item: SmokeItem, _checks: readonly AdjudicatedCheck[]): number {
+  throw new Error('TODO(codex): implement countDefectsFound');
+}
+
+/**
+ * TODO(codex): false positives on a `clean` item.
+ *
+ * THE NUMBER THAT KEEPS THE EVAL HONEST. A `clean` item has no defect, so EVERY
+ * accepted, schema-valid check on it is a false positive — regardless of which
+ * reviewer produced it and regardless of how good its evidence looks. Returns 0
+ * for any non-clean item (a finding there is scored by `countDefectsFound`, not
+ * here). Unlike the hit counter this does NOT saturate: two bogus accepted
+ * findings on one clean item are two false positives, because the cost of a
+ * false alarm is paid per finding by the student who has to answer it.
+ *
+ * An eval that reports only detections is marketing; this counter is what makes
+ * it an evaluation.
+ */
+export function countFalsePositivesOnClean(
+  _item: SmokeItem,
+  _checks: readonly AdjudicatedCheck[],
+): number {
+  throw new Error('TODO(codex): implement countFalsePositivesOnClean');
+}
+
+/**
+ * TODO(codex): nearest-rank percentile over latency samples, in milliseconds.
+ * Sort ascending, take ceil(p * n) clamped to [1, n]. An empty sample set
+ * returns 0. Deterministic — no interpolation, so p50/p95 in two reports of the
+ * same run are byte-identical.
+ */
+export function percentile(_samples: readonly number[], _p: number): number {
+  throw new Error('TODO(codex): implement percentile');
+}
+
+/**
+ * TODO(codex): fold the per-item evaluations into the report's EXACT COUNTS.
+ *
+ *  - itemsEvaluated      : evaluations matched to an item, by id.
+ *  - defectsPlanted      : items with a non-null `intended_defect`.
+ *  - defectsFound        : Σ countDefectsFound.
+ *  - falsePositivesOnClean: Σ countFalsePositivesOnClean.
+ *  - citationsChecked    : every citation emitted, including unresolvable ones.
+ *  - citationsPrecise    : those with resolved && excerptMatches.
+ *  - schemaValid/Total   : Σ of the per-item schema tallies.
+ *
+ * FAIL CLOSED ON A MISMATCH: an evaluation whose `itemId` is not in `items`, or
+ * an item with no evaluation, must THROW. Silently dropping either would make
+ * the denominator disagree with the set the report claims to cover, and "found
+ * 13 of 16" would stop meaning what it says.
+ */
+export function tallyCounts(
+  _items: readonly SmokeItem[],
+  _evaluations: readonly ItemEvaluation[],
+  _resolveCitation: CitationResolver,
+): EvalReport['counts'] {
+  throw new Error('TODO(codex): implement tallyCounts');
+}
+
+// ---------------------------------------------------------------------------
+// dev / holdout separation (doc §8)
+// ---------------------------------------------------------------------------
+
+/**
+ * Pure guard (Claude-owned): the reported split contains ONLY items from that
+ * split. Fail-closed.
+ *
+ * Dev items DEVELOPED the prompts. A report that mixes even one of them into a
+ * holdout evaluation is measuring the prompts against their own training
+ * material and reporting it as evaluation — the single most misleading thing
+ * this eval could do, and invisible in the output once it has happened, because
+ * the leaked item's numbers look exactly like every other item's. So it is
+ * checked at the boundary, before any counting, rather than trusted.
+ */
+export function assertSplitPurity(split: 'dev' | 'holdout', items: readonly SmokeItem[]): void {
+  const leaked = items.filter((item) => item.split !== split);
+  if (leaked.length > 0) {
+    throw new Error(
+      `Refusing to score a "${split}" eval run: ${leaked.length} item(s) belong to the other ` +
+        `split and would be reported as evaluation: ${leaked
+          .map((item) => `${item.id} (${item.split})`)
+          .join(', ')}.`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Injectable runner seam
+// ---------------------------------------------------------------------------
+
+/**
+ * Settings held IDENTICAL across the RUNS_PER_CONFIG runs of every config, and
+ * recorded verbatim on each artifact so a reader can PROVE the three runs were
+ * comparable instead of taking our word for it (doc §8). One frozen constant,
+ * because three runs that each build their own settings object are three runs
+ * that can silently drift apart.
+ */
+export const DEFAULT_EVAL_SETTINGS: EvalRunSettings = Object.freeze({
+  reasoningEffort: 'medium',
+  contextMode: 'item-plus-corpus',
+  budget: Object.freeze({ maxTokensPerItem: 8_000, maxCallsPerItem: 4 }),
+}) as EvalRunSettings;
+
+/**
+ * THE INJECTABLE SEAM of the eval runner. Every member is at or beyond the
+ * network boundary; the scoring, the split guard and the artifact gate are on
+ * this side of it and are therefore verifiable offline with canned results.
+ * The eval cannot be RUN without an API key — it can be fully SPECIFIED and its
+ * counting fully tested without one.
+ */
+export interface EvalRunnerDeps {
+  /** Load + validate the labeled smoke items for one split (disk in prod). */
+  loadSmokeItems: (split: 'dev' | 'holdout') => Promise<SmokeItem[]>;
+  /** One item through one config: every model call for that item lives here. */
+  evaluateItem: (
+    item: SmokeItem,
+    config: EvalConfig,
+    runIndex: RunIndex,
+  ) => Promise<ItemEvaluation>;
+  /** Resolve a citation against the licensed corpus. */
+  resolveCitation: CitationResolver;
+  /** Identical for all runs of a config; recorded on the artifact. */
+  settings: EvalRunSettings;
+  /** Hash of the exact prompt set used, recorded on the artifact. */
+  promptHash: () => string;
+  /** Injectable clock, so a report timestamp is reproducible under test. */
+  now: () => string;
+}
+
+/**
+ * TODO(codex): the real bundle — disk loader, gauntlet/baseline execution and
+ * corpus-backed citation resolution. Tests pass fakes; production passes
+ * nothing and gets this.
+ */
+export const DEFAULT_EVAL_DEPS: EvalRunnerDeps = {
+  loadSmokeItems: () => {
+    throw new Error('TODO(codex): implement smoke item loading from src/eval/smoke/');
+  },
+  evaluateItem: () => {
+    throw new Error('TODO(codex): implement per-item evaluation');
+  },
+  resolveCitation: () => {
+    throw new Error('TODO(codex): implement licensed-corpus citation resolution');
+  },
+  settings: DEFAULT_EVAL_SETTINGS,
+  promptHash: () => {
+    throw new Error('TODO(codex): implement prompt hashing for the eval artifact');
+  },
+  now: () => new Date().toISOString(),
+};
+
 /**
  * TODO(codex): implement one configuration run over the smoke set.
- *  - Load smoke items from src/eval/smoke/{dev,holdout}/*.json, validate with
- *    SmokeItemSchema, and filter by `split`.
- *  - For each item, run the requested config through src/reviewers/orchestrator.ts
- *    (+ adjudication unless config === 'gauntlet-no-adjudication').
- *  - Score against `intended_defect`: a defect counts as FOUND only if the finding
- *    matches the expected type AND carries a valid contract. `clean` items that
- *    receive any accepted finding count as FALSE POSITIVES.
- *  - Citation precision: of the citations emitted, how many resolve to the licensed
- *    corpus with a matching excerpt.
- *  - Collect latency samples for p50/p95 and token cost per item.
+ *
+ * `deps` is the ONLY route to a model call or to disk, which is what lets the
+ * counting be verified offline. Compose the pure helpers above; do not re-derive
+ * the counts inline.
+ *
+ *  - `deps.loadSmokeItems(split)` for the items (SmokeItemSchema-validated).
+ *  - `assertSplitPurity(split, items)` BEFORE scoring anything — a dev item must
+ *    never reach a holdout report.
+ *  - `deps.evaluateItem(item, config, runIndex)` per item; that is where the
+ *    orchestrator runs (+ adjudication unless config === 'gauntlet-no-adjudication').
+ *  - `tallyCounts(items, evaluations, deps.resolveCitation)` for every count.
+ *  - `percentile(latencies, 0.5 | 0.95)` for latencyMs; costUsdPerItem is the
+ *    mean per-item cost (0 when no items were evaluated — never a division by 0).
  *  - TODO(codex): call assertRuntimeCompliance(model) immediately before
  *    dispatching EACH model call (reviewer and adjudicator alike). loadModelConfig
  *    is warn-only, so this is the gate that makes "the runtime uses only gpt-5.6"
  *    true. Never dispatch on the strength of a config object read at startup.
- *  - Record the settings block (reasoningEffort, contextMode, budget) and use the
- *    IDENTICAL values for all RUNS_PER_CONFIG runs of a config — doc §8 requires
- *    the 3 runs to be comparable, and the artifact must prove it.
+ *  - Record `deps.settings` VERBATIM, and pass the SAME object to all
+ *    RUNS_PER_CONFIG runs of a config — doc §8 requires the 3 runs to be
+ *    comparable, and the artifact must prove it.
  *  - Populate modelIds { reviewer, adjudicator } with the EXACT IDs used
  *    (adjudicator is null for 'general-reviewer' and 'gauntlet-no-adjudication')
- *    and allModelIds with the deduplicated union of them.
+ *    and allModelIds with the deduplicated union of every id in
+ *    `ItemEvaluation.modelIds`, so the artifact gate has the whole truth.
  *  - Return an EvalReport with EXACT COUNTS.
  */
 export async function runConfig(
   _config: EvalConfig,
   _runIndex: RunIndex,
   _split: 'dev' | 'holdout',
+  _deps: EvalRunnerDeps = DEFAULT_EVAL_DEPS,
 ): Promise<EvalReport> {
   void assertRuntimeCompliance; // gate the Codex implementation must call per model call
   throw new Error('TODO(codex): implement single eval config run');
