@@ -2,10 +2,8 @@
  * LA FORJA — bounded probability solver spec (doc §5 deterministic class, §7.2; gate §13.3).
  *
  * CONVENTION (Claude/Codex split): solveProbability() in src/solver/probability.ts is
- * CODEX-owned and currently throws, so its suites are `describe.skip` with REAL,
- * fully written bodies — the assertions ARE the specification and run as soon as
- * Codex removes the `.skip`. reduceFraction() is Claude-owned and already works, so
- * its suite below is NOT skipped and must pass today.
+ * CODEX-owned and verified by the fully written assertions below. reduceFraction()
+ * is Claude-owned and is tested independently before the solver suites.
  *
  * The golden values come from the labeled smoke set (author-labeled, doc §8) and
  * from the seeded demo item; each test names its fixture.
@@ -85,7 +83,7 @@ describe('reduceFraction (Claude-owned, must pass today)', () => {
 // ---------------------------------------------------------------------------
 // Codex-owned solver — golden tests against the real smoke-set math.
 // ---------------------------------------------------------------------------
-describe.skip('solveProbability — factual_error fixtures (the planted defects)', () => {
+describe('solveProbability — factual_error fixtures (the planted defects)', () => {
   it('factual-error-001: P(both 6 | at least one 6) with two fair dice = 1/11, not the marked 1/6', () => {
     const problem: ProbabilityProblem = {
       kind: 'conditional',
@@ -160,7 +158,7 @@ describe.skip('solveProbability — factual_error fixtures (the planted defects)
   });
 });
 
-describe.skip('solveProbability — clean fixtures (no defect; false-positive guard)', () => {
+describe('solveProbability — clean fixtures (no defect; false-positive guard)', () => {
   it('clean-002: exactly two heads in three fair coin flips = 3/8', () => {
     const problem: ProbabilityProblem = {
       kind: 'basic',
@@ -214,7 +212,7 @@ describe.skip('solveProbability — clean fixtures (no defect; false-positive gu
   });
 });
 
-describe.skip('solveProbability — ambiguity fixtures (two readings must yield DIFFERENT answers)', () => {
+describe('solveProbability — ambiguity fixtures (two readings must yield DIFFERENT answers)', () => {
   it('ambiguous-001: at least one 6 = 11/36 and exactly one 6 = 10/36, and they differ', () => {
     const atLeastOne = solveProbability({
       kind: 'basic',
@@ -267,7 +265,7 @@ describe.skip('solveProbability — ambiguity fixtures (two readings must yield 
   });
 });
 
-describe.skip('solveProbability — determinism and bounded scope', () => {
+describe('solveProbability — determinism and bounded scope', () => {
   it('returns an identical result for the same problem solved twice', () => {
     const problem: ProbabilityProblem = {
       kind: 'conditional',

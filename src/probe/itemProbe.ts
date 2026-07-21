@@ -46,12 +46,63 @@ export interface ProbeInput {
 import type { ItemProbeResult } from '../core/types';
 
 /**
- * TODO(codex): implement using the formulas + thresholds above.
- *  - Resolve the correct option from correctKey (A=0, B=1, ...).
- *  - Compute answer_length_ratio and lexical_overlap_score exactly as specified.
- *  - Set the two boolean flags from the thresholds.
- *  - Pure + deterministic (tests/itemProbe.test.ts pins threshold boundaries).
+ * Computes the published length and lexical-overlap signals. Length uses raw
+ * whitespace tokens, while overlap compares unique, normalized content tokens.
+ * An unresolved answer key produces neutral scores instead of indexing an
+ * absent option.
  */
-export function runItemProbe(_input: ProbeInput): ItemProbeResult {
-  throw new Error('TODO(codex): implement deterministic item probe per published formulas');
+export function runItemProbe(input: ProbeInput): ItemProbeResult {
+  const normalizedKey = input.correctKey.trim().toUpperCase();
+  const correctIndex =
+    /^[A-Z]$/.test(normalizedKey) ? normalizedKey.charCodeAt(0) - 'A'.charCodeAt(0) : -1;
+  const correctOption = input.options[correctIndex];
+
+  if (correctOption === undefined) {
+    return {
+      answer_length_flag: false,
+      lexical_overlap_flag: false,
+      answer_length_ratio: 0,
+      lexical_overlap_score: 0,
+    };
+  }
+
+  const optionLengths = input.options.map((option) => whitespaceTokens(option).length);
+  const meanOptionLength =
+    optionLengths.reduce((total, length) => total + length, 0) / optionLengths.length;
+  const correctLength = whitespaceTokens(correctOption).length;
+  const answerLengthRatio = meanOptionLength === 0 ? 0 : correctLength / meanOptionLength;
+
+  const stemTokens = contentTokenSet(input.stem);
+  const correctTokens = contentTokenSet(correctOption);
+  let sharedTokenCount = 0;
+
+  for (const token of correctTokens) {
+    if (stemTokens.has(token)) {
+      sharedTokenCount += 1;
+    }
+  }
+
+  const lexicalOverlapScore =
+    correctTokens.size === 0 ? 0 : sharedTokenCount / correctTokens.size;
+
+  return {
+    answer_length_flag:
+      answerLengthRatio >= LENGTH_HIGH || answerLengthRatio <= LENGTH_LOW,
+    lexical_overlap_flag: lexicalOverlapScore >= OVERLAP_HIGH,
+    answer_length_ratio: answerLengthRatio,
+    lexical_overlap_score: lexicalOverlapScore,
+  };
+}
+
+function whitespaceTokens(value: string): string[] {
+  const trimmed = value.trim();
+  return trimmed === '' ? [] : trimmed.split(/\s+/u);
+}
+
+function contentTokenSet(value: string): Set<string> {
+  const tokens = whitespaceTokens(value)
+    .map((token) => token.toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''))
+    .filter((token) => token !== '' && !STOPWORDS.has(token));
+
+  return new Set(tokens);
 }

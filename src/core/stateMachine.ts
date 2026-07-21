@@ -25,8 +25,26 @@
  */
 import type { ItemState, StateEvent, Transition } from './types';
 
-// TODO(codex): populate the full transition table above.
-export const TRANSITIONS: Transition[] = [];
+// The complete lifecycle graph. Guard conditions are validated by callers before
+// dispatch; this table records only the state reached by each legal event.
+export const TRANSITIONS: Transition[] = [
+  { from: 'DRAFT', event: 'SUBMIT_TO_GAUNTLET', to: 'GAUNTLET' },
+  { from: 'GAUNTLET', event: 'CHECKS_ACCEPTED', to: 'CHALLENGED' },
+  { from: 'GAUNTLET', event: 'GAUNTLET_CLEAN', to: 'DEFENSE' },
+  { from: 'CHALLENGED', event: 'SUBMIT_REPAIR', to: 'REGRESSION' },
+  { from: 'REGRESSION', event: 'HISTORY_REGRESSED', to: 'CHALLENGED' },
+  { from: 'REGRESSION', event: 'HISTORY_CLEAN', to: 'DEFENSE' },
+  { from: 'DEFENSE', event: 'DEFENSE_PASSED', to: 'PUBLISHED' },
+  { from: 'DEFENSE', event: 'DEFENSE_FAILED', to: 'CHALLENGED' },
+  {
+    from: 'DEFENSE',
+    event: 'DEFENSE_EVALUATOR_FAILED',
+    to: 'DEFENSE_INCONCLUSIVE',
+  },
+  { from: 'DEFENSE_INCONCLUSIVE', event: 'DEFENSE_RETRY', to: 'DEFENSE' },
+  { from: 'PUBLISHED', event: 'NEW_DISPUTE', to: 'DISPUTED' },
+  { from: 'DISPUTED', event: 'DISPUTE_REPAIR', to: 'REGRESSION' },
+];
 
 export class IllegalTransitionError extends Error {
   constructor(from: ItemState, event: StateEvent) {
@@ -36,17 +54,25 @@ export class IllegalTransitionError extends Error {
 }
 
 /**
- * TODO(codex): implement.
- *  - Look up (from, event) in TRANSITIONS; return `to`.
- *  - Throw IllegalTransitionError for any (from, event) not in the table.
- *  - Keep it PURE (no I/O). Guard semantics (e.g. "repair created a new version")
- *    are enforced by the caller before dispatching the event.
+ * Resolves a lifecycle event through TRANSITIONS. Guard semantics (for example,
+ * ensuring a repair created a new version) are enforced by the caller before
+ * dispatching the event.
  */
-export function reduce(_from: ItemState, _event: StateEvent): ItemState {
-  throw new Error('TODO(codex): implement reduce() over TRANSITIONS');
+export function reduce(from: ItemState, event: StateEvent): ItemState {
+  const transition = TRANSITIONS.find(
+    (candidate) => candidate.from === from && candidate.event === event,
+  );
+
+  if (transition === undefined) {
+    throw new IllegalTransitionError(from, event);
+  }
+
+  return transition.to;
 }
 
-/** TODO(codex): true iff (from,event) is a legal transition (no throw). */
-export function canTransition(_from: ItemState, _event: StateEvent): boolean {
-  throw new Error('TODO(codex): implement canTransition()');
+/** Returns whether the event is legal from the given state without throwing. */
+export function canTransition(from: ItemState, event: StateEvent): boolean {
+  return TRANSITIONS.some(
+    (transition) => transition.from === from && transition.event === event,
+  );
 }

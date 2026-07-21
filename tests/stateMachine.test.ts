@@ -1,11 +1,9 @@
 /**
  * LA FORJA — item lifecycle state machine spec (doc §5, §7.1; gate §13.1).
  *
- * CONVENTION (Claude/Codex split): src/core/stateMachine.ts is CODEX-owned and its
- * functions currently throw. Every suite here is therefore `describe.skip` with a
- * REAL, fully written body: the assertions are the specification, they typecheck
- * today, and they run the moment Codex removes the `.skip`. Nothing in this file is
- * a placeholder — Codex's punch-list is exactly the skipped suites below.
+ * CONVENTION (Claude/Codex split): src/core/stateMachine.ts is CODEX-owned. The
+ * assertions below are the executable specification for its transition table,
+ * reducer, error behavior, and lifecycle invariants.
  *
  * The approved transition map is duplicated here ON PURPOSE. TRANSITIONS in the
  * source is the implementation; APPROVED below is the independent spec it is
@@ -46,7 +44,7 @@ const isApproved = (from: ItemState, event: StateEvent): boolean =>
 
 // ---------------------------------------------------------------------------
 
-describe.skip('stateMachine — the transition table', () => {
+describe('stateMachine — the transition table', () => {
   it('contains exactly the 12 approved edges and nothing else', () => {
     expect(TRANSITIONS).toHaveLength(APPROVED.length);
 
@@ -69,7 +67,7 @@ describe.skip('stateMachine — the transition table', () => {
   });
 });
 
-describe.skip('stateMachine — every legal transition, one assertion each', () => {
+describe('stateMachine — every legal transition, one assertion each', () => {
   for (const [from, event, to] of APPROVED) {
     it(`${from} --${event}--> ${to}`, () => {
       expect(reduce(from, event)).toBe(to);
@@ -78,7 +76,7 @@ describe.skip('stateMachine — every legal transition, one assertion each', () 
   }
 });
 
-describe.skip('stateMachine — DEFENSE_INCONCLUSIVE (evaluator failure is never a rejection)', () => {
+describe('stateMachine — DEFENSE_INCONCLUSIVE (evaluator failure is never a rejection)', () => {
   it('DEFENSE --DEFENSE_EVALUATOR_FAILED--> DEFENSE_INCONCLUSIVE', () => {
     expect(reduce('DEFENSE', 'DEFENSE_EVALUATOR_FAILED')).toBe('DEFENSE_INCONCLUSIVE');
   });
@@ -108,7 +106,7 @@ describe.skip('stateMachine — DEFENSE_INCONCLUSIVE (evaluator failure is never
   });
 });
 
-describe.skip('stateMachine — the full cartesian product (ITEM_STATES x STATE_EVENTS)', () => {
+describe('stateMachine — the full cartesian product (ITEM_STATES x STATE_EVENTS)', () => {
   it('accepts exactly the approved pairs and throws IllegalTransitionError on every other pair', () => {
     const actual: string[] = [];
     for (const from of ITEM_STATES) {
@@ -172,7 +170,7 @@ describe.skip('stateMachine — the full cartesian product (ITEM_STATES x STATE_
   });
 });
 
-describe.skip('stateMachine — published immutability and the v2 route back', () => {
+describe('stateMachine — published immutability and the v2 route back', () => {
   it('PUBLISHED has exactly one outgoing edge: NEW_DISPUTE', () => {
     const outgoing = STATE_EVENTS.filter((event) => canTransition('PUBLISHED', event));
     expect(outgoing).toEqual(['NEW_DISPUTE']);

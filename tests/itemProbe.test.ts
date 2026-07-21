@@ -2,9 +2,8 @@
  * LA FORJA — deterministic item probe spec (doc §7.3; deterministic check class, doc §5).
  *
  * CONVENTION (Claude/Codex split): runItemProbe() in src/probe/itemProbe.ts is
- * CODEX-owned and currently throws, so these suites are `describe.skip` with REAL,
- * fully written bodies. They typecheck today and run the moment Codex removes the
- * `.skip`; the skipped suites are Codex's punch-list. Nothing here is a placeholder.
+ * CODEX-owned. These suites contain the real acceptance assertions for that
+ * implementation; nothing here is a placeholder.
  *
  * These tests PIN THE PUBLISHED FORMULAS AND THRESHOLDS. The thresholds are part of
  * the spec: LENGTH_HIGH = 1.4, LENGTH_LOW = 0.6, OVERLAP_HIGH = 0.5, all imported
@@ -51,7 +50,7 @@ function input(stem: string, options: string[], correctKey: string): ProbeInput 
 // ---------------------------------------------------------------------------
 // (1) answer_length_ratio — boundary is INCLUSIVE at LENGTH_HIGH and LENGTH_LOW.
 // ---------------------------------------------------------------------------
-describe.skip('item_probe — answer_length_ratio, LENGTH_HIGH boundary (1.4)', () => {
+describe('item_probe — answer_length_ratio, LENGTH_HIGH boundary (1.4)', () => {
   it('does NOT flag just below the boundary (7 / 5.25 = 1.333)', () => {
     // token counts: 5, 7 (correct), 5, 4 => sum 21, mean 5.25
     const result = runItemProbe(
@@ -112,7 +111,7 @@ describe.skip('item_probe — answer_length_ratio, LENGTH_HIGH boundary (1.4)', 
   });
 });
 
-describe.skip('item_probe — answer_length_ratio, LENGTH_LOW boundary (0.6)', () => {
+describe('item_probe — answer_length_ratio, LENGTH_LOW boundary (0.6)', () => {
   it('does NOT flag just above the boundary (3 / 4.75 = 0.632)', () => {
     // token counts: 5, 3 (correct), 5, 6 => sum 19, mean 4.75
     const result = runItemProbe(
@@ -189,7 +188,7 @@ describe.skip('item_probe — answer_length_ratio, LENGTH_LOW boundary (0.6)', (
 // ---------------------------------------------------------------------------
 // (2) lexical_overlap_score — boundary is INCLUSIVE at OVERLAP_HIGH.
 // ---------------------------------------------------------------------------
-describe.skip('item_probe — lexical_overlap_score, OVERLAP_HIGH boundary (0.5)', () => {
+describe('item_probe — lexical_overlap_score, OVERLAP_HIGH boundary (0.5)', () => {
   // Every fixture below keeps all four options at the same token count, so the
   // length flag stays false and the overlap assertion is isolated.
   it('does NOT flag below the boundary (2 of 5 correct-answer tokens echo the stem = 0.4)', () => {
@@ -326,39 +325,44 @@ describe.skip('item_probe — lexical_overlap_score, OVERLAP_HIGH boundary (0.5)
 // ---------------------------------------------------------------------------
 // Real labeled-smoke-set fixtures (doc §8, author-labeled).
 // ---------------------------------------------------------------------------
-describe.skip('item_probe — real smoke-set fixtures', () => {
+describe('item_probe — real smoke-set fixtures', () => {
   it('cue-leak-001 raises the deterministic length flag', () => {
-    // Token counts: 3, 23 (correct, option B), 4, 5 => sum 35, mean 8.75.
-    // ratio = 23 / 8.75 = 2.629 >= LENGTH_HIGH.
+    // Token counts: 4, 26 (correct, option B), 5, 6 => sum 41, mean 10.25.
+    // ratio = 26 / 10.25 = 2.537 >= LENGTH_HIGH.
     const result = runItemProbe(
       input(cueLeak001.stem, cueLeak001.options, cueLeak001.correct_key),
     );
 
-    expect(result.answer_length_ratio).toBeCloseTo(23 / 8.75, 10);
+    expect(result.answer_length_ratio).toBeCloseTo(26 / 10.25, 10);
     expect(result.answer_length_flag).toBe(true);
   });
 
-  it('cue-leak-001 scores its lexical overlap at 4/11 under the published formula', () => {
-    // Derivation (content tokens = unique, stopwords removed):
-    //   correct (option B) => {cociente, entre, numero, casos, favorables, evento,
-    //                          total, posibles, espacio, muestral, equiprobable} = 11
-    //   stem                => {experimento, aleatorio, espacio, muestral,
-    //                          equiprobable, que(accented), expresa, probabilidad, evento}
-    //   intersection        => {espacio, muestral, equiprobable, evento} = 4
-    //   score = 4 / 11 = 0.364 < OVERLAP_HIGH (0.5)
+  it('cue-leak-001 scores its lexical overlap at 8/13 under the published formula', () => {
+    // Derivation (content tokens = unique, case-folded, stopwords removed):
+    //   correct (option B) => {it, number, cases, favorable, event, divided, by,
+    //                          total, equiprobable, sample, space, random,
+    //                          experiment} = 13
+    //   stem               => {random, experiment, with, equiprobable, sample,
+    //                          space, how, probability, event, defined, terms,
+    //                          favorable, cases}
+    //   intersection       => {cases, favorable, event, equiprobable, sample,
+    //                          space, random, experiment} = 8
+    //   score = 8 / 13 = 0.615 >= OVERLAP_HIGH (0.5)
     //
-    // NOTE (spec conflict, escalated — do NOT "fix" it in code): this fixture's
-    // intended_defect text claims item_probe raises BOTH flags. Under the published
-    // formula + thresholds it raises the LENGTH flag only. The published formula and
-    // the 0.5 threshold are the spec (doc §7.3), so the honest computed value is
-    // pinned here. Resolving the fixture's claim is a FIXTURE edit (shorten option B's
-    // non-echoing vocabulary), never a threshold or formula change.
+    // HISTORY, worth keeping: while this fixture was still in Spanish it scored
+    // 4/11 = 0.364 and raised the LENGTH flag only, which contradicted its own
+    // intended_defect claim of BOTH flags. That conflict was pinned here rather
+    // than papered over, with a note that resolving it had to be a FIXTURE edit
+    // and never a threshold or formula change. Translating the item to English
+    // resolved it honestly: the reworded option echoes more of the stem, so the
+    // overlap now clears the threshold on its own. Neither OVERLAP_HIGH nor the
+    // formula moved — verify that before touching these numbers again.
     const result = runItemProbe(
       input(cueLeak001.stem, cueLeak001.options, cueLeak001.correct_key),
     );
 
-    expect(result.lexical_overlap_score).toBeCloseTo(4 / 11, 10);
-    expect(result.lexical_overlap_flag).toBe(false);
+    expect(result.lexical_overlap_score).toBeCloseTo(8 / 13, 10);
+    expect(result.lexical_overlap_flag).toBe(true);
   });
 
   it('clean-001 raises NEITHER flag (the false-positive guard)', () => {
@@ -375,7 +379,7 @@ describe.skip('item_probe — real smoke-set fixtures', () => {
 // ---------------------------------------------------------------------------
 // Determinism + MVP scope (no position, no grammatical congruence).
 // ---------------------------------------------------------------------------
-describe.skip('item_probe — determinism and MVP scope', () => {
+describe('item_probe — determinism and MVP scope', () => {
   const probeInput = input(cueLeak001.stem, cueLeak001.options, cueLeak001.correct_key);
 
   it('returns an identical result for the same input probed twice', () => {
