@@ -36,7 +36,7 @@ export const DISCIPLINE_SYSTEM = [
 ].join('\n');
 
 /**
- * TODO(codex): implement the discipline reviewer.
+ * IMPLEMENTED. Invariants this call must keep (they are easy to break on edit):
  *  - system = DISCIPLINE_SYSTEM; user payload = `delimitedItem` AS GIVEN. It is
  *    ALREADY wrapped by the orchestrator (`toDelimitedItem`); do NOT call
  *    delimitItem on it here — wrapping twice nests the delimiters and breaks the

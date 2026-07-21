@@ -30,7 +30,7 @@ export const AMBIGUITY_SYSTEM = [
 ].join('\n');
 
 /**
- * TODO(codex): implement the ambiguity reviewer call.
+ * IMPLEMENTED. Invariants this call must keep (they are easy to break on edit):
  *  - system = AMBIGUITY_SYSTEM; user payload = `delimitedItem` AS GIVEN. It is
  *    ALREADY wrapped by the orchestrator (`toDelimitedItem`); do NOT call
  *    delimitItem on it here — wrapping twice nests the delimiters and breaks the
