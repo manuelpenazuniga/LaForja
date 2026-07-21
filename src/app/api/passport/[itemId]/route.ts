@@ -57,8 +57,7 @@ export async function GET(
     });
     if (!item) throw notFound('Item not found.');
 
-    // TODO(codex): assemble and return the passport.
-    //  - Call `buildPassport(params.itemId)` (src/passport/passport.ts).
+    // `buildPassport` (src/passport/passport.ts) assembles the payload:
     //  - It reads the Item, its version history with diffs, the ACCEPTED attacks
     //    with their counterexamples, the history re-run results BY CHECK CLASS,
     //    the discipline verdict with its full citation or `unverified`, and the

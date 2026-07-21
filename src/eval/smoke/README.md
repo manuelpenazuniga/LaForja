@@ -37,13 +37,16 @@ curriculum or one test, and no official taxonomy is referenced.
 ☑ All 16 items authored — 4 per category, split 2 `dev` + 2 `holdout` each
 (8 dev / 8 holdout). `tests/smokeSet.test.ts` enforces that composition.
 
-☐ **Math not yet independently verified.** Every answer was derived and cross-checked
-at authoring time, but a second human pass over the arithmetic is required before any
-of these numbers appear in a recording or in the submission. Until that happens the
-evidence matrix row "Labeled smoke eval" stays **PARTIAL**, not DONE.
+☑ **Arithmetic cross-checked by the bounded solver.** Every labeled answer that the
+solver can express is recomputed in `tests/smokeArithmetic.test.ts`. This is an
+automated check, not the independent *human* pass — a second human over the wording
+and labels is still worthwhile before a recording, but the numbers themselves are
+machine-verified.
 
-☐ The eval runner itself (`src/eval/run.ts`) is still a `TODO(codex)` stub, so no
-results exist yet. The fixtures are ready; the harness is next.
+☑ The eval runner (`src/eval/run.ts`) is implemented and tested
+(`tests/evalRunner.test.ts`). What is still missing is a live run: the OpenAI
+transport needs a runtime API key, so `eval/results/` holds no artifacts yet and the
+evidence matrix row "Labeled smoke eval" stays **PARTIAL**, not DONE.
 
 ## Measurable properties the fixtures must keep
 
