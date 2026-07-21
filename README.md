@@ -15,7 +15,7 @@ check history gets published — with an auditable passport.
 ![Models](https://img.shields.io/badge/runtime%20models-GPT--5.6%20only-black)
 ![License](https://img.shields.io/badge/license-MIT%20%2B%20CC--BY%204.0-orange)
 
-**[▶ Live demo](https://la-forja-rosy.vercel.app)** · **[Demo video](#)** *(link pending)* · OpenAI Build Week — **Education track**
+**[▶ Live demo](https://la-forja-edu.vercel.app)** · **[Demo video](#)** *(link pending)* · OpenAI Build Week — **Education track**
 
 </div>
 
@@ -54,7 +54,7 @@ enough for a bounded, reproducible solver to verify.
 
 ## ⚡ Try it — no account, no setup
 
-**Live demo: <https://la-forja-rosy.vercel.app>**
+**Live demo: <https://la-forja-edu.vercel.app>**
 
 Open it and press **"Load demo challenge"**. You get a deliberately defective
 original item — the classic two-children problem:
@@ -371,7 +371,7 @@ that promises live behaviour.
 | Three reviewers with schemas | **PARTIAL** | `src/reviewers/` + `REVIEWER_SCHEMAS` + `tests/prompts.test.ts`, `tests/schemas.test.ts`; never run against a live model |
 | v1→v2 history re-run | **PARTIAL** | `src/core/checks.ts` + `tests/checkRecording.test.ts` (deterministic + counterexample re-execution pinned in tests); live semantic re-adjudication blocked on the key |
 | Labeled smoke eval | **PARTIAL** | 16/16 fixtures (`src/eval/smoke/`) + implemented runner (`src/eval/run.ts`, `tests/evalRunner.test.ts`); `eval/results/` empty — no key, no run |
-| Stable isolated deploy | **DONE** | <https://la-forja-rosy.vercel.app> — production, seeded hosted DB, per-visitor isolated sessions verified against the deployment |
+| Stable isolated deploy | **DONE** | <https://la-forja-edu.vercel.app> — production, seeded hosted DB, per-visitor isolated sessions verified against the deployment |
 | Bounded discipline verifier | **DONE** | `src/solver/probability.ts` + `tests/solver.test.ts` + `tests/smokeArithmetic.test.ts` (solver cross-checks every labeled answer) |
 | Defense rubric | **PARTIAL** | `DefenseRubricSchema` + implemented scoring (`src/defense/viva.ts`, `tests/viva.test.ts`); no live scored example yet |
 
