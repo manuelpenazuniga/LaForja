@@ -22,7 +22,10 @@ import { callModel } from '../openai/client';
 // per-entry rules — is unchanged, since DistractorMapSchema is nested verbatim.
 const DistractorEnvelopeSchema = z.object({ findings: DistractorMapSchema });
 
-export const DISTRACTOR_PROMPT_VERSION = 'distractor-v2';
+// v3: the wire shape changed from a bare array to a { findings: [...] } object,
+// because OpenAI structured output requires an object at the JSON root. The
+// telemetry key moves with the shape so a logged ModelCall stays reproducible.
+export const DISTRACTOR_PROMPT_VERSION = 'distractor-v3';
 
 export const DISTRACTOR_SYSTEM = [
   GUARDRAIL_PREAMBLE,
