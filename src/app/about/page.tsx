@@ -21,19 +21,18 @@ export const metadata: Metadata = {
 
 const RUNS_TODAY: string[] = [
   'Isolated demo sessions — random pseudonyms, auto-reset, zero PII',
-  'The 12-transition item lifecycle — every state change goes through one reducer',
-  'A bounded solver returning exact reduced fractions with a trace',
-  'The deterministic cue probe at its published thresholds',
-  'The fail-closed history re-run: inconclusive never counts as a pass',
-  'Repair as a new immutable version, and the frozen, auditable passport',
+  'The 12-transition item lifecycle and four bounded discipline solvers',
+  'Three AI reviewers, the separate adjudication step and the deterministic probe — live over GPT-5.6 where a server key is configured',
+  'Written-defense scoring, the fail-closed history re-run and the frozen passport',
+  'Authoring your own item, once the demo cycle publishes',
+  'The reproducible smoke eval runner',
 ];
 
-const KEY_GATED: string[] = [
-  'Live calls by the three reviewers under their evidence contracts',
-  'The separate adjudication step that accepts, rejects or abstains',
-  'Written-defense question generation and rubric scoring',
-  'Re-adjudication of semantic judgments on each new version',
-  'The reproducible smoke eval — it has produced no artifacts yet',
+const FIRST_NUMBERS: string[] = [
+  'Single-reviewer baseline: finds all 12 planted defects — but flags both clean items (2 false positives)',
+  'Three specialists without adjudication: find 10–12, at the cost of 7–8 false positives',
+  'The full gauntlet with adjudication: finds 6–7, with 0–1 false positives',
+  'The separate adjudication step trades some recall for a large precision gain — exactly its job',
 ];
 
 export default function AboutPage() {
@@ -174,12 +173,13 @@ export default function AboutPage() {
             can never regress. Reasoning becomes observable under challenge.
           </p>
           <p>
-            We also authored a labeled smoke set of sixteen original items with
-            seeded flaws, and an evaluation harness that compares a single
-            general reviewer against the specialized gauntlet across repeated
-            runs, reporting exact counts — false positives, latency, cost. It
-            runs the moment a key exists; no number is reported anywhere that did
-            not come from a real run, and so far none has.
+            We also authored a labeled smoke set of original items with seeded
+            flaws — declared author-labeled, never called a gold set — and an
+            evaluation harness that compares a single general reviewer against
+            the specialized gauntlet across repeated runs, reporting exact
+            counts: defects found, false positives, latency, cost. It has now
+            run against live GPT-5.6, and every number in this repo comes from
+            those runs.
           </p>
           <p>
             The hardest challenges were epistemological, not technical. Our first
@@ -206,14 +206,15 @@ export default function AboutPage() {
 
         {/* --------------------------------------------------- the boundary */}
         <section className="ab-section" id="boundary">
-          <h2>Stated plainly: what runs today</h2>
+          <h2>Stated plainly: what runs, and the first real numbers</h2>
           <p>
-            The whole pipeline is implemented and pinned by offline tests against
-            a fake model transport. Model-backed stages run live only where a
-            server API key is configured, and the studio labels their
-            availability on every surface. The evaluation harness has published
-            no artifacts yet — no number anywhere came from a run that did not
-            happen. This is the exact boundary.
+            The whole pipeline is implemented, pinned by offline tests against a
+            fake model transport, and runs end to end against live GPT-5.6 where
+            a server API key is configured — the studio labels that availability
+            on every surface. The evaluation has run for real: three
+            configurations, three runs each, over a 14-item holdout the
+            reviewers never saw during prompt development. The raw artifacts are
+            committed to the repo, and every number below comes from them.
           </p>
           <div className="lp-status">
             <div className="lp-status__col">
@@ -228,10 +229,10 @@ export default function AboutPage() {
             </div>
             <div className="lp-status__col">
               <h3 className="lp-status__title lp-status__title--next">
-                Gated on a runtime API key
+                The first real numbers
               </h3>
               <ul>
-                {KEY_GATED.map((entry) => (
+                {FIRST_NUMBERS.map((entry) => (
                   <li key={entry}>{entry}</li>
                 ))}
               </ul>

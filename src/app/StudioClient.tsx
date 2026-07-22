@@ -43,8 +43,11 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { reduce } from '@/core/stateMachine';
+import AuthorDrawer, { type AuthorDraft } from './AuthorDrawer';
 import OnboardingDrawer from './OnboardingDrawer';
+import TopicGlyph from './TopicGlyph';
 import {
+  DISCIPLINES,
   RUBRIC_DIMENSIONS,
   type AmbiguityContract,
   type CheckClass,
@@ -339,6 +342,22 @@ const PassportWireSchema = z.object({
   publishedAt: z.string(),
 });
 
+/** Wire shape of POST /api/item — mirrors CreatedItemPayload on the server. */
+const CreatedItemWireSchema = z.object({
+  itemId: z.string().min(1),
+  versionId: z.string().min(1),
+  versionNumber: z.number().int().positive(),
+  state: ItemStateSchema,
+  discipline: DisciplineIdSchema,
+  provenance: z.string().min(1),
+  license: z.string().min(1),
+  stem: z.string().min(1),
+  options: z.array(z.string().min(1)).min(2),
+  correctKey: z.string().min(1),
+  authorRationale: z.string().min(1),
+  immutable: z.boolean(),
+});
+
 const GauntletEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('run_started'),
@@ -546,6 +565,35 @@ const api = {
     const response = await fetch(`/api/passport/${itemId}`);
     return PassportWireSchema.parse(await responseJson(response)) as Passport;
   },
+
+  /**
+   * POST /api/item — create the visitor's OWN from-scratch draft. The response
+   * carries the same item shape as the session's demo items, so the created
+   * item drops straight onto the sheet like any other.
+   */
+  async createItem(input: {
+    discipline: DisciplineId;
+    stem: string;
+    options: string[];
+    correctKey: string;
+    authorRationale: string;
+  }): Promise<StudioItem> {
+    const response = await fetch('/api/item', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    const parsed = CreatedItemWireSchema.parse(await responseJson(response));
+    return {
+      id: parsed.itemId,
+      versionNumber: parsed.versionNumber,
+      stem: parsed.stem,
+      options: parsed.options,
+      correctKey: parsed.correctKey,
+      authorRationale: parsed.authorRationale,
+      discipline: parsed.discipline,
+    };
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -572,8 +620,6 @@ const RAIL_STATES = [
   'DEFENSE',
   'PUBLISHED',
 ] as const satisfies readonly ItemState[];
-
-const BRANCH_STATES = ['DEFENSE_INCONCLUSIVE', 'DISPUTED'] as const satisfies readonly ItemState[];
 
 const CLASS_PROMISE: Record<CheckClass, { title: string; promise: string }> = {
   deterministic: {
@@ -637,17 +683,6 @@ const DIMENSION_COPY: Record<RubricDimensionKey, string> = {
   answers_variation: 'Answers a variation of the stem correctly',
 };
 
-const ROADMAP: string[] = [
-  'Appeals',
-  'Third-party attacks',
-  'Reputation and credits',
-  'Mutable commons',
-  'Accounts',
-  'Audio viva',
-  'Multi-agent (measured eval variant only)',
-  'Rankings',
-  'bank_probe',
-];
 
 const OPTION_KEYS = ['A', 'B', 'C', 'D', 'E'];
 
@@ -1278,6 +1313,54 @@ export default function StudioClient({
     else if (action.target) scrollToPanel(action.target);
   }, [nextMove, handleLoadDemo, handleSubmitToGauntlet, handleRetryDefense, scrollToPanel]);
 
+  // -- author your own item ---------------------------------------------------
+  // The second door (doc §4): unlocks once the demo cycle reaches PUBLISHED.
+  const [authorOpen, setAuthorOpen] = useState(false);
+  const authorUnlocked = session !== null && state === 'PUBLISHED';
+
+  const handleAuthorSubmit = useCallback(
+    async (authorDraft: AuthorDraft) => {
+      setBusy('author');
+      setNotice(null);
+      try {
+        const created = await api.createItem(authorDraft);
+        // A from-scratch attempt starts clean: reset every run-derived surface,
+        // exactly as the topic switcher does.
+        stateRef.current = 'DRAFT';
+        setState('DRAFT');
+        setTrail([]);
+        setReachedBranches([]);
+        setPreviousVersion(null);
+        setLanes(emptyLaneMap());
+        setChecks([]);
+        setAbstained(0);
+        setReRunByClass(null);
+        setQuestions([]);
+        setAnswers([]);
+        setRubric(null);
+        setPassport(null);
+        setTimeToCounterexampleMs(null);
+        setItem(created);
+        setDraft(draftOf(created));
+        setAuthorOpen(false);
+        toast.success('Your item is on the bench', {
+          description:
+            'Private to this session, never published. Send it into the gauntlet when ready.',
+        });
+        scrollToPanel('item');
+      } catch (err) {
+        setNotice({
+          tone: 'warn',
+          label: 'Authoring',
+          text: `The item was not created: ${errorText(err)}`,
+        });
+      } finally {
+        setBusy(null);
+      }
+    },
+    [scrollToPanel],
+  );
+
   const workingDiff = useMemo(() => {
     if (!item || !draft) return [];
     return tokenDiff(item.stem, draft.stem);
@@ -1314,6 +1397,14 @@ export default function StudioClient({
         }}
         demoLoaded={item !== null}
         modelCallsAvailable={modelCallsAvailable}
+      />
+
+      <AuthorDrawer
+        open={authorOpen}
+        onOpenChange={setAuthorOpen}
+        disciplines={[...DISCIPLINES]}
+        busy={busy === 'author'}
+        onSubmit={(authorDraft) => void handleAuthorSubmit(authorDraft)}
       />
 
       <header className="masthead">
@@ -1371,25 +1462,32 @@ export default function StudioClient({
           </ol>
         </div>
 
-        <div className="branches">
-          <span className="branches__caption">Exceptions</span>
-          {BRANCH_STATES.map((branch) => (
-            <span
-              key={branch}
+        {/* The two states off the main road, folded away until they matter. */}
+        <details className="branches" open={reachedBranches.length > 0}>
+          <summary>What if something goes sideways? Two detours exist</summary>
+          <div className="branches__body">
+            <div
               className="branch"
-              data-reached={reachedBranches.includes(branch) ? 'true' : 'false'}
-              data-current={state === branch ? 'true' : 'false'}
-              aria-disabled={branch === 'DISPUTED' ? 'true' : undefined}
-              tabIndex={branch === 'DISPUTED' ? -1 : undefined}
+              data-reached={reachedBranches.includes('DEFENSE_INCONCLUSIVE') ? 'true' : 'false'}
+              data-current={state === 'DEFENSE_INCONCLUSIVE' ? 'true' : 'false'}
             >
-              {branch}
-              <span className="muted">· {STATE_COPY[branch].note}</span>
-              {branch === 'DISPUTED' ? (
-                <span className="tag tag--next" aria-disabled="true">next</span>
-              ) : null}
-            </span>
-          ))}
-        </div>
+              <b>DEFENSE_INCONCLUSIVE</b>
+              <span>
+                If the AI evaluator itself fails while scoring your defense, no
+                verdict is recorded and you simply retry. It never counts against
+                you — an evaluator crash is not your fault.
+              </span>
+            </div>
+            <div className="branch" data-reached="false" data-current="false">
+              <b>DISPUTED</b>
+              <span>
+                After publication, an item could be challenged again and forced
+                back through a repair. That path is outside this demo.
+              </span>
+              <span className="tag tag--next">next</span>
+            </div>
+          </div>
+        </details>
 
         {trail.length > 0 ? (
           <ol className="trail">
@@ -1438,23 +1536,44 @@ export default function StudioClient({
           </div>
         </div>
 
-        <div className="onboard__secondary" aria-disabled="true">
-          <h3 className="onboard__locked-title">Author your own item</h3>
+        <div
+          className="onboard__secondary"
+          data-unlocked={authorUnlocked ? 'true' : 'false'}
+          aria-disabled={authorUnlocked ? undefined : 'true'}
+        >
+          <h3 className="onboard__locked-title">
+            {authorUnlocked ? 'The second door is open' : 'Author your own item'}
+          </h3>
           <p className="lane__rule" style={{ marginTop: 'var(--s3)' }}>
-            Repair first. Creating an item from scratch stays locked while you work through
-            the demo cycle.
+            {authorUnlocked
+              ? 'You carried one item through the whole fight. Now build your own — same gauntlet, same rules, private to this session.'
+              : 'Repair first: this unlocks once your demo item reaches step 07 and publishes.'}
           </p>
           <div className="onboard__actions">
-            <button type="button" className="btn btn--locked" disabled aria-disabled="true" tabIndex={-1}>
-              Author your own item
-            </button>
-            <span className="tag tag--next">next</span>
+            {authorUnlocked ? (
+              <button
+                type="button"
+                className="btn btn--forge"
+                disabled={busy !== null}
+                onClick={() => setAuthorOpen(true)}
+              >
+                Author your own item
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="btn btn--locked"
+                  disabled
+                  aria-disabled="true"
+                  tabIndex={-1}
+                >
+                  Author your own item
+                </button>
+                <span className="tag tag--next">unlocks at step 07</span>
+              </>
+            )}
           </div>
-          <p className="btn-note" style={{ marginTop: 'var(--s3)' }}>
-            {state === 'PUBLISHED'
-              ? 'Demo cycle complete. Authoring from scratch is next.'
-              : 'Unlocks after the demo cycle reaches PUBLISHED.'}
-          </p>
         </div>
       </section>
 
@@ -2017,35 +2136,20 @@ export default function StudioClient({
         </>
       ) : null}
 
-      {/* ------------------------------------------------------------ roadmap */}
-      <section className="panel" id="roadmap">
-        <div className="panel__head">
-          <span className="panel__step">NXT</span>
-          <h2 className="panel__title">Next</h2>
-          <span className="panel__aside">not built · no controls</span>
-        </div>
-        <div className="roadmap">
-          <p className="lane__rule">
-            These are on the roadmap. They are listed so the boundary of what runs today is
-            explicit, and none of them is a live control.
-          </p>
-          <ul className="roadmap__list">
-            {ROADMAP.map((entry) => (
-              <li className="roadmap__item" key={entry} aria-disabled="true">
-                <span>{entry}</span>
-                <span className="tag tag--next">next</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
       <footer className="colophon">
         <p>
-          <b>Scope.</b> High-school and college mathematics; the demo discipline is
-          probability. The mechanism is exam-agnostic — it was designed against the
-          constraints of a real high-stakes exam, which is where the domain expertise comes
-          from, not the boundary of where it applies.
+          <b>Scope.</b> High-school and college mathematics; the demo topics are
+          probability, statistics, triangle similarity and geometry. The mechanism is
+          exam-agnostic — it was designed against the constraints of a real high-stakes
+          exam, which is where the domain expertise comes from, not the boundary of where
+          it applies.
+        </p>
+        <p>
+          <b>Roadmap.</b> Appeals, third-party attacks, reputation and credits, a mutable
+          commons, accounts, audio defenses, multi-agent orchestration (only ever as a
+          measured eval variant), rankings and bank_probe are roadmap items — named here so
+          the boundary of what runs today stays explicit, and none of them is a live
+          control anywhere in this studio.
         </p>
         <p>
           <b>Provenance.</b> Every item in this studio is team-authored and published under
@@ -2120,53 +2224,6 @@ function StepExplainer({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Small stroke glyph per demo discipline for the topic picker. */
-function TopicGlyph({ discipline }: { discipline: DisciplineId }) {
-  const common = {
-    viewBox: '0 0 24 24',
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeWidth: 1.8,
-    strokeLinecap: 'round',
-    strokeLinejoin: 'round',
-    'aria-hidden': true,
-  } as const;
-  if (discipline === 'probability') {
-    return (
-      <svg {...common}>
-        <rect x="4" y="4" width="16" height="16" rx="4" />
-        <circle cx="9" cy="9" r="1.1" fill="currentColor" stroke="none" />
-        <circle cx="15" cy="15" r="1.1" fill="currentColor" stroke="none" />
-        <circle cx="15" cy="9" r="1.1" fill="currentColor" stroke="none" />
-        <circle cx="9" cy="15" r="1.1" fill="currentColor" stroke="none" />
-      </svg>
-    );
-  }
-  if (discipline === 'statistics') {
-    return (
-      <svg {...common}>
-        <path d="M4 20h16" />
-        <path d="M7 20v-6" />
-        <path d="M12 20V9" />
-        <path d="M17 20V5" />
-      </svg>
-    );
-  }
-  if (discipline === 'triangle-similarity') {
-    return (
-      <svg {...common}>
-        <path d="M4 19h9L4 8v11z" />
-        <path d="M13 19h7l-7-8.5V19z" opacity="0.55" />
-      </svg>
-    );
-  }
-  return (
-    <svg {...common}>
-      <circle cx="10" cy="14" r="6" />
-      <path d="M13 4l7 3-3 7" />
-    </svg>
-  );
-}
 
 function LanePanel({
   spec,

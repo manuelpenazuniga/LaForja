@@ -150,9 +150,9 @@ export default function LandingPage() {
           </a>
         </div>
         <p className="lp-hero__status">
-          The studio, the seeded challenges, versioning and passports run today.
-          Reviewer stages run live wherever a server API key is configured, and
-          the studio shows that availability honestly instead of faking results.
+          The studio is the workshop itself — a broken problem is already waiting
+          on the bench. No account, no setup, five minutes: load it, find the
+          flaw, repair it, and walk out with a passport.
         </p>
 
         {/* The signature: the real demo defect, shown as the construction it is. */}
@@ -325,15 +325,17 @@ export default function LandingPage() {
           <div>
             <h2 className="lp-h2">Stated plainly</h2>
             <p className="lp-section__lede">
-              The whole pipeline is implemented and pinned by offline tests.
-              Model-backed stages run live only where a server API key is
-              configured — the studio labels their availability on every surface —
-              and the evaluation harness has published no artifacts yet. No number
-              anywhere came from a run that did not happen.
+              The whole pipeline — three reviewers, adjudication, written defense,
+              passport — runs end to end against live GPT-5.6, and the evaluation
+              has run for real. On the 14-item holdout the single-reviewer
+              baseline finds all 12 planted defects but flags both clean items;
+              the full gauntlet finds 6–7 with at most one false positive. Exact
+              counts, committed to the repo — no number anywhere came from a run
+              that did not happen.
             </p>
           </div>
           <Link className="lp-btn lp-btn--outline" href="/about#boundary">
-            Read the exact boundary
+            Read the numbers
           </Link>
         </div>
       </section>

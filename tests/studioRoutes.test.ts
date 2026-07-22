@@ -88,7 +88,13 @@ describe('client stubs point at routes that exist', () => {
    * scanned for drift but not required to name any endpoint.
    */
   const sources = ['StudioClient.tsx', 'studio/page.tsx'];
-  const presentationOnly = ['page.tsx', 'about/page.tsx', 'OnboardingDrawer.tsx'];
+  const presentationOnly = [
+    'page.tsx',
+    'about/page.tsx',
+    'OnboardingDrawer.tsx',
+    'AuthorDrawer.tsx',
+    'TopicGlyph.tsx',
+  ];
 
   for (const file of [...sources, ...presentationOnly]) {
     it(`${file} names no endpoint without a route file`, () => {
