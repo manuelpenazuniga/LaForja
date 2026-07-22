@@ -58,6 +58,7 @@ const FULL_CITATION = {
 
 /** A recorded bounded-solver run: what makes a solver-grounded verdict provable. */
 const SOLVER_PROOF = {
+  discipline: 'probability',
   problem_kind: 'conditional' as const,
   inputs: { space: 'BB,BG,GB,GG', condition: 'al menos uno es varon', target: 'ambos varones' },
   computed_value: '1/3',
@@ -185,6 +186,7 @@ describe('CitationSchema (a bare source_url is never enough)', () => {
 
 describe('SolverProofSchema (recorded bounded-solver run, doc §6.2)', () => {
   const proof = {
+    discipline: 'probability',
     problem_kind: 'conditional',
     inputs: { space: 'BB,BG,GB,GG', condition: 'al menos uno es varon', target: 'ambos varones' },
     computed_value: '1/3',
@@ -196,11 +198,24 @@ describe('SolverProofSchema (recorded bounded-solver run, doc §6.2)', () => {
     expect(SolverProofSchema.safeParse(proof).success).toBe(true);
   });
 
-  it('rejects a decimal computed_value (the answer must stay exact)', () => {
-    const result = SolverProofSchema.safeParse({ ...proof, computed_value: '0.333' });
-    expect(result.success).toBe(false);
-    if (result.success) return;
-    expect(issuePaths(result.error.issues)).toContain('computed_value');
+  it('accepts a bounded decimal computed_value (for irrational geometry/statistics answers)', () => {
+    // The exact-fraction-only rule was probability-specific. A geometry or
+    // statistics answer can be irrational (a π-based area, a non-perfect-square
+    // root); the bounded solver publishes it as a bounded decimal, and the
+    // history re-run compares it within the solver's published tolerance
+    // (src/core/checks.ts). So a decimal is now a legitimate recorded answer.
+    expect(SolverProofSchema.safeParse({ ...proof, computed_value: '153.938040' }).success).toBe(
+      true,
+    );
+  });
+
+  it('still rejects a computed_value that is neither an exact fraction nor a bounded decimal', () => {
+    for (const bad of ['0.3.3', 'abc', '', '1/', '/3', '1e5']) {
+      const result = SolverProofSchema.safeParse({ ...proof, computed_value: bad });
+      expect(result.success).toBe(false);
+      if (result.success) continue;
+      expect(issuePaths(result.error.issues)).toContain('computed_value');
+    }
   });
 
   it('rejects a zero denominator', () => {
@@ -212,10 +227,14 @@ describe('SolverProofSchema (recorded bounded-solver run, doc §6.2)', () => {
     expect(SolverProofSchema.safeParse({ ...proof, steps: ['  '] }).success).toBe(false);
   });
 
-  it('rejects a problem_kind the bounded solver does not support', () => {
-    expect(SolverProofSchema.safeParse({ ...proof, problem_kind: 'bayesian_network' }).success).toBe(
-      false,
-    );
+  it('accepts any non-empty problem_kind (kind validity is enforced by the solver at re-run)', () => {
+    // problem_kind is free text ON PURPOSE: an unknown (discipline, kind) pair
+    // becomes { supported: false } at solve() time → inconclusive → fail-closed,
+    // rather than being duplicated in this schema where it would drift from the
+    // solvers. The schema only requires the kind to be present and non-blank.
+    expect(SolverProofSchema.safeParse({ ...proof, problem_kind: 'iqr' }).success).toBe(true);
+    expect(SolverProofSchema.safeParse({ ...proof, problem_kind: 'area_circle' }).success).toBe(true);
+    expect(SolverProofSchema.safeParse({ ...proof, problem_kind: '   ' }).success).toBe(false);
   });
 
   it('rejects a missing solver_version (the run must be reproducible)', () => {
@@ -288,11 +307,14 @@ describe('DisciplineSchema (no sufficient source ⇒ never `correct`)', () => {
   });
 
   it('REJECTS an `incorrect` verdict whose solver_proof is malformed', () => {
+    // '0.3.3' is neither an exact fraction nor a bounded decimal, so it is still a
+    // malformed computed_value (a plain '0.333' is now a VALID bounded decimal —
+    // see SolverProofSchema — so it would no longer exercise this path).
     const result = DisciplineSchema.safeParse({
       claim: 'La clave marcada no coincide con el calculo.',
       verdict: 'incorrect',
       citation: null,
-      solver_proof: { ...SOLVER_PROOF, computed_value: '0.333' },
+      solver_proof: { ...SOLVER_PROOF, computed_value: '0.3.3' },
     });
     expect(result.success).toBe(false);
     if (result.success) return;

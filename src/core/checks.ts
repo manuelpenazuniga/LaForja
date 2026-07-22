@@ -28,8 +28,10 @@
  */
 import { z } from 'zod';
 import { runItemProbe, LENGTH_HIGH, OVERLAP_HIGH } from '../probe/itemProbe';
-import { solveProbability } from '../solver/probability';
-import type { ProbabilityProblem } from '../solver/probability';
+import { solve } from '../solver';
+import { ProblemSchema } from '../solver/schema';
+import { solverProofToProblem } from '../solver/proof';
+import { SolverProofSchema } from '../reviewers/schemas';
 import { CHECK_STATUS, REVIEWER_TYPES, VERIFICATION_KINDS } from './types';
 import type { CheckClass, ReviewerType, VerificationKind } from './types';
 
@@ -584,17 +586,79 @@ const VersionUnderCheckSchema = z.object({
 });
 type VersionUnderCheck = z.infer<typeof VersionUnderCheckSchema>;
 
-const ProbabilityProblemSchema: z.ZodType<ProbabilityProblem> = z.object({
-  kind: z.enum(['conditional', 'combinatoric', 'basic']),
-  params: z.record(z.union([z.number(), z.string(), z.boolean()])),
-});
-
+// The re-executable problem shape. `ProblemSchema` (src/solver/schema.ts)
+// defaults `discipline` to 'probability', so every historical probability
+// contract — recorded before disciplines existed — still parses and re-runs
+// identically, while statistics/geometry/triangle contracts carry their own
+// discipline and route to the right bounded solver at `solve()`.
 const SolverInvariantContractSchema = z.object({
   invariant: z.literal('solver_key_matches'),
-  problem: ProbabilityProblemSchema,
+  problem: ProblemSchema,
   solverAnswer: z.string().trim().min(1),
   failingKey: z.string().trim().min(1),
 });
+
+/**
+ * The discipline reviewer records its OWN contract (a Discipline verdict object
+ * carrying a `solver_proof`) — the passport displays that contract verbatim, so
+ * it must NOT be rewritten into a bare solver contract. This is the minimal
+ * lens that pulls the re-executable proof back out of it at re-run time.
+ */
+const RecordedDisciplineProofSchema = z.object({ solver_proof: SolverProofSchema });
+
+/**
+ * The two recorded shapes a `solver_key_matches` check can carry, reduced to the
+ * one thing the re-run needs: the re-executable `problem` and the `solverAnswer`
+ * the recording claims the solver produced.
+ *
+ *  1. An explicit `SolverInvariantContract` (test fixtures, and any future
+ *     directly-recorded form).
+ *  2. The discipline reviewer's Discipline contract, whose `solver_proof` names
+ *     the discipline, kind and inputs — carried across the seam by
+ *     `solverProofToProblem` so `solve()` routes to the right solver.
+ */
+function resolveSolverContract(
+  raw: unknown,
+): { problem: z.infer<typeof ProblemSchema>; solverAnswer: string } | undefined {
+  const explicit = SolverInvariantContractSchema.safeParse(raw);
+  if (explicit.success) {
+    return { problem: explicit.data.problem, solverAnswer: explicit.data.solverAnswer };
+  }
+  const discipline = RecordedDisciplineProofSchema.safeParse(raw);
+  if (discipline.success) {
+    const proof = discipline.data.solver_proof;
+    return { problem: solverProofToProblem(proof), solverAnswer: proof.computed_value };
+  }
+  return undefined;
+}
+
+/**
+ * Strict, no-guess numeric parser for the decimal re-run path. Accepts ONLY the
+ * canonical forms the bounded solvers emit — integer, exact fraction, plain
+ * decimal — and refuses everything else so an unparseable marked answer becomes
+ * 'inconclusive', never a false 'pass'.
+ */
+function parseBoundedNumber(text: string): number | undefined {
+  const trimmed = text.trim();
+  if (/^-?\d+$/.test(trimmed)) {
+    const value = Number(trimmed);
+    return Number.isFinite(value) ? value : undefined;
+  }
+  const fraction = /^(-?\d+)\/(\d+)$/.exec(trimmed);
+  if (fraction) {
+    const numerator = Number(fraction[1]);
+    const denominator = Number(fraction[2]);
+    if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) {
+      return undefined;
+    }
+    return numerator / denominator;
+  }
+  if (/^-?\d+\.\d+$/.test(trimmed)) {
+    const value = Number(trimmed);
+    return Number.isFinite(value) ? value : undefined;
+  }
+  return undefined;
+}
 
 const ProbeInvariantContractSchema = z.object({
   invariant: z.enum(['answer_length_flag', 'lexical_overlap_flag']),
@@ -623,8 +687,8 @@ const AmbiguityInvariantContractSchema = z
     answer_a: z.string().trim().min(1),
     answer_b: z.string().trim().min(1),
     evidence: z.string().trim().min(1),
-    problem_a: ProbabilityProblemSchema.optional(),
-    problem_b: ProbabilityProblemSchema.optional(),
+    problem_a: ProblemSchema.optional(),
+    problem_b: ProblemSchema.optional(),
   })
   .refine((contract) => contract.answer_a !== contract.answer_b, {
     message: 'the two recorded readings must yield different answers',
@@ -675,23 +739,14 @@ function runSolverKeyCheck(
     return executableOutcome(check, 'inconclusive', 'The recorded solver build is unavailable.');
   }
 
-  const contract = SolverInvariantContractSchema.safeParse(check.contract);
-  if (!contract.success) {
+  const contract = resolveSolverContract(check.contract);
+  if (contract === undefined) {
     return executableOutcome(check, 'inconclusive', 'The solver evidence contract is malformed.');
   }
 
-  const solved = solveProbability(contract.data.problem);
-  if (!solved.supported || solved.value === undefined) {
+  const solved = solve(contract.problem);
+  if (!solved.supported) {
     return executableOutcome(check, 'inconclusive', 'The recorded problem is outside solver bounds.');
-  }
-
-  const solverAnswer = formatFraction(solved.value.numerator, solved.value.denominator);
-  if (normalizeAnswer(contract.data.solverAnswer) !== solverAnswer) {
-    return executableOutcome(
-      check,
-      'inconclusive',
-      'The available solver does not reproduce the recorded solver answer.',
-    );
   }
 
   const markedAnswer = answerForKey(version.options, version.correctKey);
@@ -699,10 +754,45 @@ function runSolverKeyCheck(
     return executableOutcome(check, 'inconclusive', 'The marked answer key is not resolvable.');
   }
 
-  return executableOutcome(
-    check,
-    normalizeAnswer(markedAnswer) === solverAnswer ? 'pass' : 'regressed',
-  );
+  // EXACT (rational) mode — unchanged: compare exact fraction strings.
+  if (solved.value !== undefined) {
+    const solverAnswer = formatFraction(solved.value.numerator, solved.value.denominator);
+    if (normalizeAnswer(contract.solverAnswer) !== solverAnswer) {
+      return executableOutcome(
+        check,
+        'inconclusive',
+        'The available solver does not reproduce the recorded solver answer.',
+      );
+    }
+    return executableOutcome(
+      check,
+      normalizeAnswer(markedAnswer) === solverAnswer ? 'pass' : 'regressed',
+    );
+  }
+
+  // DECIMAL mode — an irrational answer (π, a non-perfect-square root). The
+  // solver publishes an ABSOLUTE tolerance derived from the problem itself; the
+  // comparison is |marked − computed| ≤ tolerance, never a fuzzy match budget.
+  if (solved.decimal !== undefined && solved.tolerance !== undefined) {
+    const recorded = parseBoundedNumber(contract.solverAnswer);
+    if (recorded === undefined || Math.abs(recorded - solved.decimal) > solved.tolerance) {
+      return executableOutcome(
+        check,
+        'inconclusive',
+        'The available solver does not reproduce the recorded solver answer.',
+      );
+    }
+    const marked = parseBoundedNumber(markedAnswer);
+    if (marked === undefined) {
+      return executableOutcome(check, 'inconclusive', 'The marked answer is not a bounded number.');
+    }
+    return executableOutcome(
+      check,
+      Math.abs(marked - solved.decimal) <= solved.tolerance ? 'pass' : 'regressed',
+    );
+  }
+
+  return executableOutcome(check, 'inconclusive', 'The recorded problem is outside solver bounds.');
 }
 
 function runProbeCheck(
@@ -789,9 +879,12 @@ function runAmbiguityCheck(
   }
 
   // BRANCH 2 — a real re-execution: re-solve BOTH readings with the bounded
-  // solver at the recorded executor version.
-  const solvedA = solveProbability(problemA);
-  const solvedB = solveProbability(problemB);
+  // solver at the recorded executor version. `solve` dispatches on the recorded
+  // problem's discipline; a reading that resolves to a decimal-only (irrational)
+  // answer has no exact fraction to compare and is treated as not re-executable
+  // below → 'inconclusive' (fail-closed), matching the pre-multidiscipline path.
+  const solvedA = solve(problemA);
+  const solvedB = solve(problemB);
   if (
     !solvedA.supported ||
     solvedA.value === undefined ||

@@ -131,11 +131,13 @@ const V2: VersionUnderCheck = {
 };
 
 const SOLVER_PROBLEM: ProbabilityProblem = {
+  discipline: 'probability',
   kind: 'conditional',
   params: { experiment: 'two_children', event: 'both_boys', given: 'at_least_one_boy' },
 };
 
 const SOLVER_PROBLEM_B: ProbabilityProblem = {
+  discipline: 'probability',
   kind: 'conditional',
   params: { experiment: 'two_children', event: 'both_boys', given: 'elder_is_boy' },
 };

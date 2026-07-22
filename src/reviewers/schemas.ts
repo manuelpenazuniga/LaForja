@@ -10,6 +10,7 @@
  */
 import { z } from 'zod';
 import { RUBRIC_DIMENSIONS } from '../core/types';
+import { DisciplineIdSchema } from '../core/disciplines';
 
 // ---------------------------------------------------------------------------
 // Shared primitives
@@ -82,18 +83,37 @@ export type Citation = z.infer<typeof CitationSchema>;
 
 /**
  * Structured artifact of a BOUNDED SOLVER run (doc §6.2: verification by
- * "reproducible computation / bounded solver"). `problem_kind` mirrors
- * `ProbabilityProblem['kind']` in src/solver/probability.ts (Codex-owned);
- * `computed_value` is the EXACT rational answer as a string ("1/11", "0", "1"),
- * never a lossy decimal.
+ * "reproducible computation / bounded solver").
+ *
+ *  - `discipline` names WHICH bounded solver produced this proof; it is what
+ *    `solverProofToProblem` (src/solver/proof.ts) carries into the re-executable
+ *    `Problem` so the history re-run routes to the right solver.
+ *  - `problem_kind` is free text here on purpose: its validity is (discipline,
+ *    kind)-specific and is enforced by the SOLVER at re-run (an unknown pair
+ *    becomes `supported:false` → inconclusive → fail-closed), not duplicated in
+ *    this schema where it would drift from the solvers.
+ *  - `computed_value` is the solver's answer as a string: either the EXACT
+ *    rational answer ("1/11", "0", "1") or, for an irrational result (a π-based
+ *    or non-perfect-square-root answer in geometry/statistics), a BOUNDED
+ *    DECIMAL ("153.938040"). Never other formats.
+ *
+ * This stays a PLAIN ZodObject with only a field-level `.refine` on the
+ * `computed_value` string — no object-level `.superRefine`/`discriminatedUnion`.
+ * It is nested inside `DisciplineSchema` (itself object-`.refine`d) and validated
+ * as a provider structured-output schema; wrapping an array/object effect here
+ * reproduces the ZodEffects-in-bundle break we already hit with distractors.
  */
 export const SolverProofSchema = z.object({
-  problem_kind: z.enum(['conditional', 'combinatoric', 'basic']),
+  discipline: DisciplineIdSchema,
+  problem_kind: z.string().trim().min(1),
   inputs: z.record(z.union([z.string(), z.number(), z.boolean()])),
   computed_value: z
     .string()
     .trim()
-    .regex(/^-?\d+(?:\/\d+)?$/, 'computed_value must be an exact fraction, e.g. "1/11"')
+    .regex(
+      /^-?\d+(?:\/\d+)?$|^-?\d+(?:\.\d+)?$/,
+      'computed_value must be an exact fraction ("1/11") or a bounded decimal ("153.938040")',
+    )
     .refine((v) => !/\/0+$/.test(v), { message: 'denominator must not be zero' }),
   steps: z.array(evidenceText).min(1),
   solver_version: nonBlankText,

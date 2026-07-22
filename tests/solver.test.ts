@@ -40,6 +40,7 @@ import type { ProbabilityProblem, SolverResult } from '@/solver/probability';
 /** Build an urn problem with only `draws` varying — the depth-bound parameter. */
 function urn(draws: number, overrides: Record<string, number | string | boolean> = {}): ProbabilityProblem {
   return {
+    discipline: 'probability',
     kind: 'combinatoric',
     params: {
       experiment: 'urn_draws',
@@ -108,6 +109,7 @@ describe('reduceFraction (Claude-owned, must pass today)', () => {
 describe('solveProbability — factual_error fixtures (the planted defects)', () => {
   it('factual-error-001: P(both 6 | at least one 6) with two fair dice = 1/11, not the marked 1/6', () => {
     const problem: ProbabilityProblem = {
+      discipline: 'probability',
       kind: 'conditional',
       params: {
         experiment: 'two_fair_dice',
@@ -129,6 +131,7 @@ describe('solveProbability — factual_error fixtures (the planted defects)', ()
 
   it('factual-error-002: two white in a row from 4 white + 6 black WITHOUT replacement = 2/15', () => {
     const problem: ProbabilityProblem = {
+      discipline: 'probability',
       kind: 'combinatoric',
       params: {
         experiment: 'urn_draws',
@@ -146,6 +149,7 @@ describe('solveProbability — factual_error fixtures (the planted defects)', ()
 
   it('factual-error-002: the marked key 4/25 is the WITH-replacement value (the author\'s error)', () => {
     const withReplacement: ProbabilityProblem = {
+      discipline: 'probability',
       kind: 'combinatoric',
       params: {
         experiment: 'urn_draws',
@@ -161,6 +165,7 @@ describe('solveProbability — factual_error fixtures (the planted defects)', ()
     expectFraction(solveProbability(withReplacement), 4, 25);
 
     const withoutReplacement: ProbabilityProblem = {
+      discipline: 'probability',
       kind: 'combinatoric',
       params: {
         experiment: 'urn_draws',
@@ -183,6 +188,7 @@ describe('solveProbability — factual_error fixtures (the planted defects)', ()
 describe('solveProbability — clean fixtures (no defect; false-positive guard)', () => {
   it('clean-002: exactly two heads in three fair coin flips = 3/8', () => {
     const problem: ProbabilityProblem = {
+      discipline: 'probability',
       kind: 'basic',
       params: {
         experiment: 'fair_coin_flips',
@@ -198,6 +204,7 @@ describe('solveProbability — clean fixtures (no defect; false-positive guard)'
 
   it('clean-001: one red from 3 red + 5 blue = 3/8', () => {
     const problem: ProbabilityProblem = {
+      discipline: 'probability',
       kind: 'combinatoric',
       params: {
         experiment: 'urn_draws',
@@ -214,10 +221,12 @@ describe('solveProbability — clean fixtures (no defect; false-positive guard)'
 
   it('clean fixtures agree with the key the author marked (option A in both)', () => {
     const coin = solveProbability({
+      discipline: 'probability',
       kind: 'basic',
       params: { experiment: 'fair_coin_flips', flips: 3, event: 'exactly_k_heads', k: 2 },
     });
     const urn = solveProbability({
+      discipline: 'probability',
       kind: 'combinatoric',
       params: {
         experiment: 'urn_draws',
@@ -237,10 +246,12 @@ describe('solveProbability — clean fixtures (no defect; false-positive guard)'
 describe('solveProbability — ambiguity fixtures (two readings must yield DIFFERENT answers)', () => {
   it('ambiguous-001: at least one 6 = 11/36 and exactly one 6 = 10/36, and they differ', () => {
     const atLeastOne = solveProbability({
+      discipline: 'probability',
       kind: 'basic',
       params: { experiment: 'two_fair_dice', event: 'at_least_one_six' },
     });
     const exactlyOne = solveProbability({
+      discipline: 'probability',
       kind: 'basic',
       params: { experiment: 'two_fair_dice', event: 'exactly_one_six' },
     });
@@ -258,6 +269,7 @@ describe('solveProbability — ambiguity fixtures (two readings must yield DIFFE
 
   it('ambiguous-002: two hearts without replacement = 1/17, with replacement = 1/16, and they differ', () => {
     const withoutReplacement = solveProbability({
+      discipline: 'probability',
       kind: 'combinatoric',
       params: {
         experiment: 'urn_draws',
@@ -269,6 +281,7 @@ describe('solveProbability — ambiguity fixtures (two readings must yield DIFFE
       },
     });
     const withReplacement = solveProbability({
+      discipline: 'probability',
       kind: 'combinatoric',
       params: {
         experiment: 'urn_draws',
@@ -290,6 +303,7 @@ describe('solveProbability — ambiguity fixtures (two readings must yield DIFFE
 describe('solveProbability — determinism and bounded scope', () => {
   it('returns an identical result for the same problem solved twice', () => {
     const problem: ProbabilityProblem = {
+      discipline: 'probability',
       kind: 'conditional',
       params: {
         experiment: 'two_fair_dice',
@@ -308,6 +322,7 @@ describe('solveProbability — determinism and bounded scope', () => {
 
   it('is insensitive to key order in params (same problem, same result)', () => {
     const a = solveProbability({
+      discipline: 'probability',
       kind: 'combinatoric',
       params: {
         experiment: 'urn_draws',
@@ -319,6 +334,7 @@ describe('solveProbability — determinism and bounded scope', () => {
       },
     });
     const b = solveProbability({
+      discipline: 'probability',
       kind: 'combinatoric',
       params: {
         event: 'all_favorable',
@@ -336,6 +352,7 @@ describe('solveProbability — determinism and bounded scope', () => {
 
   it('returns { supported: false } for an unsupported shape and never guesses', () => {
     const outOfScope: ProbabilityProblem = {
+      discipline: 'probability',
       kind: 'basic',
       params: { experiment: 'markov_chain_stationary_distribution', states: 4 },
     };
@@ -349,6 +366,7 @@ describe('solveProbability — determinism and bounded scope', () => {
 
   it('returns { supported: false } for a known experiment with an unknown event', () => {
     const result = solveProbability({
+      discipline: 'probability',
       kind: 'basic',
       params: { experiment: 'two_fair_dice', event: 'sum_is_prime_and_product_is_square' },
     });
@@ -361,6 +379,7 @@ describe('solveProbability — determinism and bounded scope', () => {
     // P(A|B) is undefined when B is impossible. The bounded verifier abstains here;
     // the discipline reviewer then reports `unverified`, never `correct` (doc §6.2).
     const result = solveProbability({
+      discipline: 'probability',
       kind: 'conditional',
       params: { experiment: 'two_fair_dice', event: 'both_six', given: 'impossible_event' },
     });
@@ -431,6 +450,7 @@ describe('solveProbability — published bounds (depth as well as width)', () =>
 
   it('refuses an absurd or degenerate flip count instead of enumerating it', () => {
     const flips = (n: number, k: number): ProbabilityProblem => ({
+      discipline: 'probability',
       kind: 'basic',
       params: { experiment: 'fair_coin_flips', flips: n, event: 'exactly_k_heads', k },
     });
@@ -449,6 +469,7 @@ describe('solveProbability — published bounds (depth as well as width)', () =>
         for (let draws = 1; draws <= 4; draws += 1) {
           for (const replacement of [true, false]) {
             const result = solveProbability({
+              discipline: 'probability',
               kind: 'combinatoric',
               params: {
                 experiment: 'urn_draws',

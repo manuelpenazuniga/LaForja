@@ -90,6 +90,7 @@ interface ProbeInvariantContract {
 // factual-error-001 — the solver invariant: marked key must equal the solver answer
 // ---------------------------------------------------------------------------
 const SOLVER_PROBLEM: ProbabilityProblem = {
+  discipline: 'probability',
   kind: 'conditional',
   params: {
     experiment: 'two_fair_dice',
@@ -282,6 +283,7 @@ interface ReExecutableAmbiguityContract extends AmbiguityContract {
 /** Reading A resolves to 1/3, reading B to 1/2 ⇒ they still disagree. */
 const DIVERGING_READINGS: Pick<ReExecutableAmbiguityContract, 'problem_a' | 'problem_b'> = {
   problem_a: {
+    discipline: 'probability',
     kind: 'combinatoric',
     params: {
       experiment: 'urn_draws',
@@ -293,6 +295,7 @@ const DIVERGING_READINGS: Pick<ReExecutableAmbiguityContract, 'problem_a' | 'pro
     },
   },
   problem_b: {
+    discipline: 'probability',
     kind: 'basic',
     params: { experiment: 'fair_coin_flips', event: 'exactly_k_heads', flips: 1, k: 1 },
   },
@@ -301,10 +304,12 @@ const DIVERGING_READINGS: Pick<ReExecutableAmbiguityContract, 'problem_a' | 'pro
 /** Both readings resolve to 1/2 ⇒ they converge, the construction is dead. */
 const CONVERGING_READINGS: Pick<ReExecutableAmbiguityContract, 'problem_a' | 'problem_b'> = {
   problem_a: {
+    discipline: 'probability',
     kind: 'basic',
     params: { experiment: 'fair_coin_flips', event: 'exactly_k_heads', flips: 1, k: 1 },
   },
   problem_b: {
+    discipline: 'probability',
     kind: 'combinatoric',
     params: {
       experiment: 'urn_draws',
@@ -634,6 +639,7 @@ describe('D1 regression — no natural-language pattern decides a counterexample
         ...(AMBIGUITY_CHECK.contract as AmbiguityContract),
         problem_a: DIVERGING_READINGS.problem_a,
         problem_b: {
+          discipline: 'probability',
           kind: 'basic',
           params: { experiment: 'unsupported_experiment', event: 'whatever' },
         },

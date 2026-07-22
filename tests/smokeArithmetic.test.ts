@@ -74,21 +74,25 @@ const urn = (
   draws: number,
   replacement: boolean,
 ): ProbabilityProblem => ({
+  discipline: 'probability',
   kind: 'combinatoric',
   params: { experiment: 'urn_draws', event: 'all_favorable', favorable, unfavorable, draws, replacement },
 });
 
 const dice = (event: string): ProbabilityProblem => ({
+  discipline: 'probability',
   kind: 'basic',
   params: { experiment: 'two_fair_dice', event },
 });
 
 const coinFlips = (flips: number, k: number): ProbabilityProblem => ({
+  discipline: 'probability',
   kind: 'basic',
   params: { experiment: 'fair_coin_flips', event: 'exactly_k_heads', flips, k },
 });
 
 const bothSixGivenAtLeastOne: ProbabilityProblem = {
+  discipline: 'probability',
   kind: 'conditional',
   params: { experiment: 'two_fair_dice', event: 'both_six', given: 'at_least_one_six' },
 };
