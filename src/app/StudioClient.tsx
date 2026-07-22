@@ -413,8 +413,15 @@ function parseLaneContract(reviewerType: ReviewerType, value: unknown): LaneCont
       return { kind: 'ambiguity', value: AmbiguitySchema.parse(value) };
     case 'discipline':
       return { kind: 'discipline', value: DisciplineSchema.parse(value) };
-    case 'distractor':
-      return { kind: 'distractor', value: DistractorMapSchema.parse(value) };
+    case 'distractor': {
+      // The reviewer LANE streams the whole distractor map (an array); an
+      // adjudicated CHECK carries a SINGLE finding, because adjudication records
+      // one Check per distractor entry (doc §6.2). Accept both shapes so the
+      // object-shaped check parses instead of throwing "expected array, received
+      // object" at the client and stalling the run at step 2.
+      const entries = Array.isArray(value) ? value : [value];
+      return { kind: 'distractor', value: DistractorMapSchema.parse(entries) };
+    }
     case 'item_probe':
       return { kind: 'item_probe', value: ItemProbeSchema.parse(value) };
   }
