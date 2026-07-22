@@ -56,6 +56,29 @@ export const REVIEWER_TYPES = [
 ] as const;
 export type ReviewerType = (typeof REVIEWER_TYPES)[number];
 
+// ---------------------------------------------------------------------------
+// Math disciplines (doc §5, §7.2). Each has a BOUNDED DETERMINISTIC SOLVER in
+// src/solver that grounds the discipline reviewer's numeric verdict — "the
+// model said so" is never final evidence. `probability` is the demo discipline
+// and stays first so it remains the schema default for every historical
+// contract (see src/solver/schema.ts).
+//
+// SPELLING IS LOAD-BEARING: `triangle-similarity` uses a HYPHEN, everywhere in
+// code and data. `disciplineLabel` (src/core/disciplines.ts) owns the display
+// form. The Zod validator is `DisciplineIdSchema` (NOT `DisciplineSchema`,
+// which is already the reviewer VERDICT contract in reviewers/schemas.ts).
+//
+// This module stays Zod-free on purpose — it is the single source of truth for
+// the String-column allowed values, and the Zod validator derives from it.
+// ---------------------------------------------------------------------------
+export const DISCIPLINES = [
+  'probability',
+  'statistics',
+  'triangle-similarity',
+  'geometry',
+] as const;
+export type DisciplineId = (typeof DISCIPLINES)[number];
+
 /**
  * HOW a check was verified — the second half of the pair that fixes its class.
  *

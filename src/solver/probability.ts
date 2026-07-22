@@ -14,28 +14,11 @@
  * REFUSE rather than crash and rather than answer, in that order of preference.
  */
 
-/** A structured probability problem the solver can evaluate deterministically. */
-export interface ProbabilityProblem {
-  /** Discriminated by `kind`; Codex defines the full union as fixtures grow. */
-  kind: 'conditional' | 'combinatoric' | 'basic';
-  /** Problem-specific parameters (documented per kind in the fixtures). */
-  params: Record<string, number | string | boolean>;
-}
-
-export interface ExactFraction {
-  numerator: number;
-  denominator: number;
-}
-
-export interface SolverResult {
-  supported: boolean;
-  /** Exact rational answer when supported. */
-  value?: ExactFraction;
-  /** Decimal approximation for display/compare. */
-  decimal?: number;
-  /** Reproducible steps (sample space size, favorable count, etc.). */
-  steps?: string[];
-}
+// The shared solver primitives now live in ./types (one definition for every
+// discipline). They are re-exported here so every historical import path
+// (`from '../solver/probability'`) keeps resolving unchanged.
+export type { ExactFraction, SolverResult, ProbabilityProblem } from './types';
+import type { ExactFraction, SolverResult, ProbabilityProblem } from './types';
 
 /** Reduce a fraction to lowest terms (helper Codex may reuse). */
 export function reduceFraction(n: number, d: number): ExactFraction {
