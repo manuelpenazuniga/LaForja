@@ -84,9 +84,12 @@ function fakeAdjudicator(
   const transport = async <T>(args: ModelCallArgs<T>): Promise<ModelCallResult<T>> => {
     calls.push(args as unknown as ModelCallArgs<unknown>);
     if (overrides.fail) throw overrides.fail;
+    // Structured output requires an object at the root, so the adjudicator's wire
+    // contract is `{ rulings: [...] }` (AdjudicationEnvelopeSchema); the fake must
+    // mirror that envelope, not the bare array.
     return {
-      data: rulings as unknown as T,
-      raw: JSON.stringify(rulings),
+      data: { rulings } as unknown as T,
+      raw: JSON.stringify({ rulings }),
       modelId: overrides.modelId ?? ADJUDICATOR_RESOLVED,
       modelFamilyOk: true,
       latencyMs: 12,
@@ -122,6 +125,7 @@ const AMBIGUITY_EQUAL_ANSWERS = {
 };
 
 const SOLVER_PROOF = {
+  discipline: 'probability',
   problem_kind: 'conditional' as const,
   inputs: { children: 2, observed: 'at_least_one_boy' },
   computed_value: '1/3',
@@ -742,6 +746,73 @@ describe('adjudication — the separate ruling stage (doc §6.2, §7.1)', () => 
         'semantic',
         'semantic',
       ]);
+    });
+
+    it('a SINGLE distractor outcome carrying the map (production shape) expands to N checks', async () => {
+      // PRODUCTION SHAPE: the distractor reviewer emits ONE outcome whose contract
+      // is the whole DistractorMap (an array), not one outcome per entry (§6.2;
+      // src/reviewers/distractors.ts). Adjudication must expand that map into one
+      // check per entry — otherwise the entire lane is rejected as
+      // "Expected object, received array" and no distractor finding is recorded.
+      const map = [
+        DISTRACTOR_EVIDENCED,
+        DISTRACTOR_HYPOTHESIS,
+        {
+          distractor: '2/3',
+          hypothesized_error: 'Inverts the conditional.',
+          confidence: 0.5,
+          label: 'hypothesis' as const,
+        },
+      ];
+      const fake = fakeAdjudicator([]);
+      const result = await run(
+        orchestration([
+          ok('ambiguity', AMBIGUITY_DIFFERING),
+          ok('discipline', DISCIPLINE_SOLVER),
+          ok('distractor', map), // ONE outcome, the whole map
+          ok('item_probe', ITEM_PROBE_FLAGGED),
+        ]),
+        fake.transport,
+      );
+
+      const distractors = checksFor(result, 'distractor');
+      expect(distractors).toHaveLength(map.length);
+      // Each expanded check carries a SINGLE finding contract (an object), never
+      // the array — the passport renders one distractor finding per row.
+      for (const check of distractors) {
+        expect(Array.isArray(check.contract)).toBe(false);
+      }
+      // Per-entry status survives expansion: the evidenced entry is accepted, the
+      // two bare hypotheses stay hypothesis (confidence is never evidence).
+      expect(distractors.filter((c) => c.status === 'accepted')).toHaveLength(1);
+      expect(distractors.filter((c) => c.status === 'hypothesis')).toHaveLength(2);
+    });
+
+    it('dedups duplicate entries WITHIN a single distractor map outcome', async () => {
+      // The same distractor+hypothesized_error twice in one map is one finding,
+      // not two — dedup must run after expansion, exactly as it does across
+      // separate outcomes.
+      const map = [
+        DISTRACTOR_EVIDENCED,
+        { ...DISTRACTOR_EVIDENCED, confidence: 0.4, evidence: undefined, label: 'hypothesis' as const },
+      ];
+      const fake = fakeAdjudicator([]);
+      const result = await run(
+        orchestration([
+          ok('ambiguity', AMBIGUITY_DIFFERING),
+          ok('discipline', DISCIPLINE_SOLVER),
+          ok('distractor', map),
+          ok('item_probe', ITEM_PROBE_FLAGGED),
+        ]),
+        fake.transport,
+      );
+
+      const distractors = checksFor(result, 'distractor');
+      expect(distractors).toHaveLength(1);
+      // The kept row is the better-evidenced entry (a real merged finding), not a
+      // single lane rejected for being an array.
+      expect(only(distractors).status).toBe('accepted');
+      expect(only(distractors).note ?? '').toMatch(/merge|duplicat/i);
     });
   });
 

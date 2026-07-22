@@ -164,6 +164,16 @@ export const AdjudicationSchema = z.array(
 );
 export type AdjudicatorRuling = z.infer<typeof AdjudicationSchema>[number];
 
+/**
+ * WIRE envelope for the adjudicator call. OpenAI structured output (like the
+ * distractor reviewer's, src/reviewers/distractors.ts) requires a JSON OBJECT at
+ * the root — a bare array is rejected with `invalid_json_schema` ("schema must be
+ * of type object, got type array"). The rulings array is therefore wrapped under
+ * a `rulings` key on the wire and unwrapped below; the domain contract stays
+ * `AdjudicationSchema`.
+ */
+export const AdjudicationEnvelopeSchema = z.object({ rulings: AdjudicationSchema });
+
 export const ADJUDICATION_PROMPT_VERSION = 'adjudication-v1';
 
 export const ADJUDICATION_SYSTEM = [
@@ -172,7 +182,8 @@ export const ADJUDICATION_SYSTEM = [
   '',
   'TASK: Rule only on the reviewer findings supplied in the untrusted block.',
   'Never author an item, solution, citation, solver result, or new finding.',
-  'Return an array of rulings with finding_ref, verification_kind, status, and note.',
+  'Return a JSON object { "rulings": [ ... ] } whose "rulings" is an array of',
+  'rulings, each with finding_ref, verification_kind, status, and note.',
   'The stable finding reference is reviewerType#index, using the displayed index.',
   'You may refuse evidence, but you may never manufacture evidence or promote an',
   'unverified assertion. The model said so is never final evidence.',
@@ -202,26 +213,36 @@ export async function adjudicate(
   adjudicatorModel: string,
   options: AdjudicationOptions = {},
 ): Promise<AdjudicationResult> {
-  const outcomes = orchestration.outcomes ?? [];
+  // The distractor reviewer emits ONE outcome carrying the whole DistractorMap
+  // (an array), but the rest of adjudication is written per single finding (§6.2:
+  // one Check per distractor entry). Expand that outcome into one distractor
+  // outcome per entry BEFORE anything reads `outcomes`, so buildCallPayload, the
+  // finding_ref indices and the candidate loop all see the same expanded list and
+  // stay consistent. Without this the whole lane is rejected as
+  // "Expected object, received array".
+  const outcomes = expandDistractorOutcomes(orchestration.outcomes ?? []);
   const callPayload = buildCallPayload(outcomes, options.delimitedItem);
   const invoke = options.callModel ?? callModel;
-  const callResult = await invoke<z.infer<typeof AdjudicationSchema>>({
+  const callResult = await invoke<z.infer<typeof AdjudicationEnvelopeSchema>>({
     model: adjudicatorModel,
     system: ADJUDICATION_SYSTEM,
     delimitedItem: callPayload,
-    schema: AdjudicationSchema,
+    schema: AdjudicationEnvelopeSchema,
     promptVersion: ADJUDICATION_PROMPT_VERSION,
     callSite: 'adjudication',
   });
 
   // The production caller validates this at the network boundary. Re-checking
-  // also keeps an injected transport from bypassing the response contract.
-  const parsedRulings = AdjudicationSchema.safeParse(callResult.data);
-  if (!parsedRulings.success) {
+  // also keeps an injected transport from bypassing the response contract. The
+  // rulings array is unwrapped from the object envelope required by structured
+  // output (see AdjudicationEnvelopeSchema).
+  const parsedEnvelope = AdjudicationEnvelopeSchema.safeParse(callResult.data);
+  if (!parsedEnvelope.success) {
     throw new Error(
-      `Adjudicator returned an invalid ruling contract: ${JSON.stringify(parsedRulings.error.issues)}`,
+      `Adjudicator returned an invalid ruling contract: ${JSON.stringify(parsedEnvelope.error.issues)}`,
     );
   }
+  const parsedRulings = { data: parsedEnvelope.data.rulings };
 
   const knownRefs = new Set(
     outcomes
@@ -259,6 +280,34 @@ export async function adjudicate(
     gauntletComplete,
     ...(gauntletComplete ? {} : { incompleteReason: incompleteReason(orchestration) }),
   };
+}
+
+/**
+ * Expand a distractor outcome whose contract is a DistractorMap (array) into one
+ * distractor outcome per entry, so the per-finding adjudication logic (§6.2: one
+ * Check per distractor entry) runs on each. Order is preserved so finding_ref
+ * indices stay stable. Any other outcome passes through unchanged — including a
+ * distractor outcome whose contract is NOT a non-empty array (a malformed or
+ * empty contract), which is left intact so classifyOutcome can reject it and the
+ * lane keeps a recorded (rejected) row rather than silently vanishing.
+ */
+function expandDistractorOutcomes(outcomes: ReviewerOutcome[]): ReviewerOutcome[] {
+  const expanded: ReviewerOutcome[] = [];
+  for (const outcome of outcomes) {
+    if (
+      outcome.ok &&
+      outcome.reviewerType === 'distractor' &&
+      Array.isArray(outcome.contract) &&
+      outcome.contract.length > 0
+    ) {
+      for (const finding of outcome.contract) {
+        expanded.push({ ...outcome, contract: finding });
+      }
+      continue;
+    }
+    expanded.push(outcome);
+  }
+  return expanded;
 }
 
 function buildCallPayload(outcomes: ReviewerOutcome[], delimitedItem: string | undefined): string {
