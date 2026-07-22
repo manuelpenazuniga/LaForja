@@ -170,6 +170,7 @@ describe('untrusted-item boundary is wrapped exactly once', () => {
     options: ['1/2', '1/3', '2/3'],
     correctKey: 'B',
     authorRationale: 'Espacio muestral reducido a tres casos equiprobables.',
+    discipline: 'probability' as const,
   };
 
   it('serializeItem returns UNDELIMITED text (wrapping is a separate step)', () => {

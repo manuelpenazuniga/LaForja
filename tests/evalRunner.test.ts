@@ -73,6 +73,7 @@ import {
   REVIEWER_TIMEOUT_MS,
   runGauntlet,
   toDelimitedItem,
+  type DisciplineReviewerFn,
   type GauntletDeps,
   type GeneralReviewerCaller,
   type OrchestratedReviewer,
@@ -84,6 +85,16 @@ import {
 const REVIEWER_MODEL = 'gpt-5.6-terra';
 const ADJUDICATOR_MODEL = 'gpt-5.6-sol';
 const FORBIDDEN_MODEL = 'gpt-4o-mini';
+
+/**
+ * Adapt a `ReviewerFn<Discipline>` test fake to the discipline seam type: the
+ * orchestrator passes `discipline` at index 2, before the signal, so drop it and
+ * forward the signal.
+ */
+const asDisciplineReviewer =
+  (fn: ReviewerFn<Discipline>): DisciplineReviewerFn =>
+  (t, m, _discipline, signal) =>
+    fn(t, m, signal);
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -270,6 +281,7 @@ const RAW_ITEM: RawItem = {
   options: ['1/2', '1/3', '1/4', '3/4'],
   correctKey: 'A',
   authorRationale: 'Of the 18 even-sum outcomes, 9 have both dice odd.',
+  discipline: 'probability',
 };
 
 const AMBIGUITY_CONTRACT: Ambiguity = {
@@ -598,7 +610,7 @@ describe('single general-reviewer baseline — the comparison must be fair', () 
       makeGauntletDeps({
         reviewGeneral: general.fn,
         reviewAmbiguity: ambiguity.fn as ReviewerFn<Ambiguity>,
-        reviewDiscipline: discipline.fn as ReviewerFn<Discipline>,
+        reviewDiscipline: asDisciplineReviewer(discipline.fn as ReviewerFn<Discipline>),
         reviewDistractors: distractors.fn as ReviewerFn<DistractorMap>,
       }),
     );

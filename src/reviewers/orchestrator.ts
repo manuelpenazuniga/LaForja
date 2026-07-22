@@ -13,7 +13,7 @@
  * NEVER be the default.
  */
 import { z } from 'zod';
-import type { ItemProbeResult, ReviewerType } from '../core/types';
+import type { DisciplineId, ItemProbeResult, ReviewerType } from '../core/types';
 import type { EvalConfig } from '../eval/types';
 import {
   callModel,
@@ -32,6 +32,13 @@ export interface RawItem {
   options: string[];
   correctKey: string;
   authorRationale: string;
+  /**
+   * The item's math discipline. TRUSTED author metadata — it selects the
+   * bounded solver and the discipline reviewer's DOMAIN line. It is deliberately
+   * NOT serialized into the delimited untrusted block (see `serializeItem`), so
+   * adding it leaves the probability `promptHash` byte-for-byte identical.
+   */
+  discipline: DisciplineId;
 }
 
 /**
@@ -162,6 +169,21 @@ export type ReviewerFn<T> = (
 ) => Promise<T>;
 
 /**
+ * The discipline reviewer needs the item's discipline (to pick its DOMAIN line
+ * and the expected solver). It takes `discipline` as a positional BEFORE
+ * `signal`; `runGauntlet` closes over `item.discipline` to expose it to the
+ * orchestrator as an ordinary `ReviewerFn<Discipline>`. Kept a distinct seam
+ * type rather than widening `ReviewerFn` so only the one reviewer that needs the
+ * discipline carries it.
+ */
+export type DisciplineReviewerFn = (
+  delimitedItem: string,
+  model: string,
+  discipline: DisciplineId,
+  signal?: AbortSignal,
+) => Promise<Discipline>;
+
+/**
  * THE INJECTABLE SEAM. Everything in this bundle is at or beyond the network
  * boundary; everything else in `runGauntlet` — concurrency, timeouts,
  * partial-failure capture, the single wrap — is on this side of it and is
@@ -169,7 +191,7 @@ export type ReviewerFn<T> = (
  */
 export interface GauntletDeps {
   reviewAmbiguity: ReviewerFn<Ambiguity>;
-  reviewDiscipline: ReviewerFn<Discipline>;
+  reviewDiscipline: DisciplineReviewerFn;
   reviewDistractors: ReviewerFn<DistractorMap>;
   /**
    * The doc §8 baseline: ONE general reviewer call. Its contract shape is
@@ -334,7 +356,14 @@ export async function runGauntlet(
       ? [{ reviewerType: GENERAL_REVIEWER, fn: deps.reviewGeneral }]
       : [
           { reviewerType: 'ambiguity', fn: deps.reviewAmbiguity },
-          { reviewerType: 'discipline', fn: deps.reviewDiscipline },
+          {
+            reviewerType: 'discipline',
+            // Close over the item's discipline so the discipline reviewer stays a
+            // plain ReviewerFn to the orchestrator while still reviewing the item
+            // under its own DOMAIN.
+            fn: (text, model, signal) =>
+              deps.reviewDiscipline(text, model, item.discipline, signal),
+          },
           { reviewerType: 'distractor', fn: deps.reviewDistractors },
         ];
 

@@ -35,6 +35,7 @@ import {
   DEFAULT_MULTI_AGENT_VARIANT,
   runGauntlet,
   toDelimitedItem,
+  type DisciplineReviewerFn,
   type GauntletDeps,
   type OrchestratedReviewer,
   type OrchestrationResult,
@@ -45,11 +46,22 @@ import {
 
 const MODEL = 'gpt-5.6-terra';
 
+/**
+ * Adapt a two/three-arg `ReviewerFn<Discipline>` test fake to the discipline
+ * seam type: the orchestrator now passes `discipline` at index 2, before the
+ * signal, so drop it and forward the signal the fake relies on for abort.
+ */
+const asDisciplineReviewer =
+  (fn: ReviewerFn<Discipline>): DisciplineReviewerFn =>
+  (t, m, _discipline, signal) =>
+    fn(t, m, signal);
+
 const ITEM: RawItem = {
   stem: 'Se lanzan dos dados equilibrados. Sabiendo que la suma es par, ¿cuál es la probabilidad de que ambos sean impares?',
   options: ['1/2', '1/3', '1/4', '3/4'],
   correctKey: 'A',
   authorRationale: 'De los 18 resultados con suma par, 9 tienen ambos dados impares.',
+  discipline: 'probability',
 };
 
 // ---------------------------------------------------------------------------
@@ -189,7 +201,7 @@ const neverCalledGeneral: FakeReviewer<unknown> = resolvingReviewer<unknown>(GEN
 function makeDeps(overrides: Partial<GauntletDeps> = {}): GauntletDeps {
   return {
     reviewAmbiguity: resolvingReviewer(AMBIGUITY_FINDING).fn,
-    reviewDiscipline: resolvingReviewer(DISCIPLINE_FINDING).fn,
+    reviewDiscipline: asDisciplineReviewer(resolvingReviewer(DISCIPLINE_FINDING).fn),
     reviewDistractors: resolvingReviewer(DISTRACTOR_MAP).fn,
     reviewGeneral: neverCalledGeneral.fn,
     runItemProbe: fakeProbe().fn,
@@ -264,7 +276,7 @@ describe('runGauntlet — a partial failure never breaks the run', () => {
     const distractors = resolvingReviewer(DISTRACTOR_MAP);
     const deps = makeDeps({
       reviewAmbiguity: ambiguity.fn,
-      reviewDiscipline: discipline.fn,
+      reviewDiscipline: asDisciplineReviewer(discipline.fn),
       reviewDistractors: distractors.fn,
       timeoutMs: 1_000,
     });
@@ -349,7 +361,7 @@ describe('runGauntlet — three failures are not a clean gauntlet', () => {
   function allFailingDeps(): GauntletDeps {
     return makeDeps({
       reviewAmbiguity: hangingReviewer<Ambiguity>().fn,
-      reviewDiscipline: throwingReviewer<Discipline>('connection reset').fn,
+      reviewDiscipline: asDisciplineReviewer(throwingReviewer<Discipline>('connection reset').fn),
       reviewDistractors: hangingReviewer<DistractorMap>().fn,
       timeoutMs: 1_000,
     });
@@ -436,7 +448,7 @@ describe('runGauntlet — the three reviewers run concurrently', () => {
   it('takes about as long as the SLOWEST reviewer, not the sum of all three', async () => {
     const deps = makeDeps({
       reviewAmbiguity: resolvingReviewer(AMBIGUITY_FINDING, FAST).fn,
-      reviewDiscipline: resolvingReviewer(DISCIPLINE_FINDING, MEDIUM).fn,
+      reviewDiscipline: asDisciplineReviewer(resolvingReviewer(DISCIPLINE_FINDING, MEDIUM).fn),
       reviewDistractors: resolvingReviewer(DISTRACTOR_MAP, SLOW).fn,
       timeoutMs: SEQUENTIAL_TOTAL * 2, // generous: the timeout is not what is under test
     });
@@ -460,7 +472,7 @@ describe('runGauntlet — the three reviewers run concurrently', () => {
     const distractors = resolvingReviewer(DISTRACTOR_MAP, SLOW);
     const deps = makeDeps({
       reviewAmbiguity: ambiguity.fn,
-      reviewDiscipline: discipline.fn,
+      reviewDiscipline: asDisciplineReviewer(discipline.fn),
       reviewDistractors: distractors.fn,
       timeoutMs: SEQUENTIAL_TOTAL * 2,
     });
@@ -490,7 +502,7 @@ describe('runGauntlet — the three reviewers run concurrently', () => {
       'gauntlet',
       makeDeps({
         reviewAmbiguity: ambiguity.fn,
-        reviewDiscipline: discipline.fn,
+        reviewDiscipline: asDisciplineReviewer(discipline.fn),
         reviewDistractors: distractors.fn,
       }),
     );
@@ -511,7 +523,7 @@ describe('runGauntlet — the three reviewers run concurrently', () => {
       'gauntlet',
       makeDeps({
         reviewAmbiguity: ambiguity.fn,
-        reviewDiscipline: discipline.fn,
+        reviewDiscipline: asDisciplineReviewer(discipline.fn),
         reviewDistractors: distractors.fn,
       }),
     );
@@ -537,7 +549,7 @@ describe('runGauntlet — per-reviewer timeout', () => {
     const hung = hangingReviewer<Discipline>();
     const deps = makeDeps({
       reviewAmbiguity: resolvingReviewer(AMBIGUITY_FINDING, 10).fn,
-      reviewDiscipline: hung.fn,
+      reviewDiscipline: asDisciplineReviewer(hung.fn),
       reviewDistractors: resolvingReviewer(DISTRACTOR_MAP, 10).fn,
     });
 
@@ -561,7 +573,7 @@ describe('runGauntlet — per-reviewer timeout', () => {
 
   it('aborts the timed-out reviewer instead of leaving its request running', async () => {
     const hung = hangingReviewer<Discipline>();
-    const deps = makeDeps({ reviewDiscipline: hung.fn, timeoutMs: 1_000 });
+    const deps = makeDeps({ reviewDiscipline: asDisciplineReviewer(hung.fn), timeoutMs: 1_000 });
 
     await advanceAndSettle(runGauntlet(ITEM, MODEL, 'gauntlet', deps), 1_100);
 
@@ -574,7 +586,7 @@ describe('runGauntlet — per-reviewer timeout', () => {
     const healthy = resolvingReviewer(AMBIGUITY_FINDING, 10);
     const deps = makeDeps({
       reviewAmbiguity: healthy.fn,
-      reviewDiscipline: hangingReviewer<Discipline>().fn,
+      reviewDiscipline: asDisciplineReviewer(hangingReviewer<Discipline>().fn),
       timeoutMs: 1_000,
     });
 
@@ -597,7 +609,7 @@ describe('runGauntlet — per-reviewer timeout', () => {
   it('the budget is per reviewer, not for the batch: three slow-but-legal reviewers all succeed', async () => {
     const deps = makeDeps({
       reviewAmbiguity: resolvingReviewer(AMBIGUITY_FINDING, 900).fn,
-      reviewDiscipline: resolvingReviewer(DISCIPLINE_FINDING, 900).fn,
+      reviewDiscipline: asDisciplineReviewer(resolvingReviewer(DISCIPLINE_FINDING, 900).fn),
       reviewDistractors: resolvingReviewer(DISTRACTOR_MAP, 900).fn,
       timeoutMs: 1_000, // the SUM (2_700) far exceeds it; each individual call does not
     });
@@ -631,7 +643,7 @@ describe('runGauntlet — the deterministic item_probe', () => {
     });
     const deps = makeDeps({
       reviewAmbiguity: hangingReviewer<Ambiguity>().fn,
-      reviewDiscipline: throwingReviewer<Discipline>('connection reset').fn,
+      reviewDiscipline: asDisciplineReviewer(throwingReviewer<Discipline>('connection reset').fn),
       reviewDistractors: hangingReviewer<DistractorMap>().fn,
       runItemProbe: probe.fn,
       timeoutMs: 1_000,
@@ -654,7 +666,7 @@ describe('runGauntlet — the deterministic item_probe', () => {
   it('a probe result does NOT make a failed run complete', async () => {
     const deps = makeDeps({
       reviewAmbiguity: hangingReviewer<Ambiguity>().fn,
-      reviewDiscipline: hangingReviewer<Discipline>().fn,
+      reviewDiscipline: asDisciplineReviewer(hangingReviewer<Discipline>().fn),
       reviewDistractors: hangingReviewer<DistractorMap>().fn,
       timeoutMs: 1_000,
     });
@@ -708,7 +720,7 @@ describe('runGauntlet — untrusted item text is wrapped exactly once', () => {
       'gauntlet',
       makeDeps({
         reviewAmbiguity: ambiguity.fn,
-        reviewDiscipline: discipline.fn,
+        reviewDiscipline: asDisciplineReviewer(discipline.fn),
         reviewDistractors: distractors.fn,
       }),
     );
@@ -733,7 +745,7 @@ describe('runGauntlet — untrusted item text is wrapped exactly once', () => {
       'gauntlet',
       makeDeps({
         reviewAmbiguity: ambiguity.fn,
-        reviewDiscipline: discipline.fn,
+        reviewDiscipline: asDisciplineReviewer(discipline.fn),
         reviewDistractors: distractors.fn,
       }),
     );
@@ -804,7 +816,7 @@ describe('runGauntlet — eval configs', () => {
       'general-reviewer',
       makeDeps({
         reviewAmbiguity: ambiguity.fn,
-        reviewDiscipline: discipline.fn,
+        reviewDiscipline: asDisciplineReviewer(discipline.fn),
         reviewDistractors: distractors.fn,
         reviewGeneral: general.fn,
       }),
@@ -843,7 +855,7 @@ describe('runGauntlet — eval configs', () => {
       'gauntlet',
       makeDeps({
         reviewAmbiguity: ambiguity.fn,
-        reviewDiscipline: discipline.fn,
+        reviewDiscipline: asDisciplineReviewer(discipline.fn),
         reviewDistractors: distractors.fn,
         reviewGeneral: general.fn,
       }),
