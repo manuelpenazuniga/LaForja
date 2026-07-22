@@ -986,4 +986,27 @@ describe('adjudication — the separate ruling stage (doc §6.2, §7.1)', () => 
       );
     });
   });
+
+  describe('the adjudicator must SEE the item (regression: blind adjudication)', () => {
+    // A caller that omitted options.delimitedItem (the eval runner did) made
+    // buildCallPayload substitute "No item text was supplied." — the adjudicator
+    // then ruled on findings about an item it could not read and rejected almost
+    // every real one. These pin the item text into the adjudicator's payload.
+    it('passes the delimited item through to the adjudicator call', async () => {
+      const fake = fakeAdjudicator([]);
+      await adjudicate(completeRun(), ADJUDICATOR_ALIAS, {
+        callModel: fake.transport,
+        delimitedItem: DELIMITED_ITEM,
+      });
+      const seen = fake.calls[0]?.delimitedItem ?? '';
+      expect(seen).toContain('A fair coin is tossed twice.');
+      expect(seen).not.toContain('No item text was supplied');
+    });
+
+    it('falls back to an explicit "no item text" marker only when none is supplied', async () => {
+      const fake = fakeAdjudicator([]);
+      await adjudicate(completeRun(), ADJUDICATOR_ALIAS, { callModel: fake.transport });
+      expect(fake.calls[0]?.delimitedItem ?? '').toContain('No item text was supplied');
+    });
+  });
 });

@@ -47,6 +47,7 @@ import {
   GENERAL_REVIEWER,
   GENERAL_REVIEWER_SYSTEM,
   runGauntlet,
+  toDelimitedItem,
 } from '../reviewers/orchestrator';
 import {
   EVAL_CONFIGS,
@@ -629,23 +630,27 @@ async function evaluateItem(
   const models = loadModelConfig();
   assertRuntimeCompliance(models.reviewerModel);
   const startedAt = Date.now();
-  const orchestration = await runGauntlet(
-    {
-      stem: item.stem,
-      options: item.options,
-      correctKey: item.correct_key,
-      authorRationale: item.author_rationale,
-      discipline: item.discipline,
-    },
-    models.reviewerModel,
-    config,
-  );
+  const rawItem = {
+    stem: item.stem,
+    options: item.options,
+    correctKey: item.correct_key,
+    authorRationale: item.author_rationale,
+    discipline: item.discipline,
+  };
+  const orchestration = await runGauntlet(rawItem, models.reviewerModel, config);
 
   let checks: AdjudicatedCheck[];
   const modelIds = [models.reviewerModel];
   if (config === 'gauntlet') {
     assertRuntimeCompliance(models.adjudicatorModel);
-    checks = (await adjudicate(orchestration, models.adjudicatorModel)).checks;
+    // The adjudicator must SEE the item to verify a claim about it. Without the
+    // delimited item, buildCallPayload substitutes "No item text was supplied."
+    // and the adjudicator rules blind — rejecting almost every real finding.
+    checks = (
+      await adjudicate(orchestration, models.adjudicatorModel, {
+        delimitedItem: toDelimitedItem(rawItem),
+      })
+    ).checks;
     modelIds.push(models.adjudicatorModel);
   } else {
     checks = checksWithoutAdjudication(config, orchestration.outcomes);
