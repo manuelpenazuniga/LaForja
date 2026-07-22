@@ -67,11 +67,12 @@ function canonical(path: string): string {
 
 const CANONICAL_ROUTES = REAL_ROUTES.map(canonical);
 
-describe('the five routes that exist', () => {
+describe('the routes that exist', () => {
   it('is exactly the set the studio is allowed to call', () => {
     expect(REAL_ROUTES).toEqual([
       '/api/defense',
       '/api/gauntlet',
+      '/api/item',
       '/api/passport/:itemId',
       '/api/repair',
       '/api/session',
