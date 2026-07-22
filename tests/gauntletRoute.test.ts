@@ -347,6 +347,7 @@ function itemRow(state: ItemState, withVersion = true) {
     id: ITEM_ID,
     sessionId: SESSION_ID,
     state,
+    discipline: 'probability',
     versions: withVersion
       ? [
           {
