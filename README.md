@@ -10,7 +10,7 @@ Only what survives a repair, a written defense and a full re-run of its
 check history gets published — with an auditable passport.
 
 [![CI](https://github.com/manuelpenazuniga/LaForja/actions/workflows/ci.yml/badge.svg)](https://github.com/manuelpenazuniga/LaForja/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-891%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-1054%20passing-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
 ![Models](https://img.shields.io/badge/runtime%20models-GPT--5.6%20only-black)
 ![License](https://img.shields.io/badge/license-MIT%20%2B%20CC--BY%204.0-orange)
@@ -200,7 +200,7 @@ bounded probability solver, the deterministic item probe, the fail-closed histor
 re-run engine, the model-call wrapper, all three reviewers, the streaming
 orchestrator, the adjudication step, the defense generation and scoring, the
 passport builder and the eval runner — and the suite that had been waiting for
-each of them went green: **891 tests passing across 24 files, 0 skipped**, with
+each of them went green: **1054 tests passing across 28 files, 0 skipped**, with
 `tsc --noEmit` clean under `strict` and `noUncheckedIndexedAccess`.
 
 **/feedback Codex Session ID:** `<PLACEHOLDER — filled in the Devpost submission form>`
@@ -243,48 +243,49 @@ suite pins the behaviour.
 The project language rule is symmetric and strictly enforced: present tense only
 for what runs today, and implemented work is never understated either.
 
-**What runs today** — the complete backend and studio: state machine, solver,
-item probe, fail-closed history re-run, model-call wrapper, all three reviewers,
-streaming orchestration, adjudication, defense generation and rubric scoring,
-passport assembly, the eval runner, all five API routes, the assay-sheet UI, and
-the isolated live deployment on Vercel + Turso. All of it is exercised by the
-test suite — 891 passing, 0 skipped.
+**What runs today** — the complete backend and studio: state machine, four
+bounded discipline solvers (probability, statistics, triangle similarity,
+geometry), item probe, fail-closed history re-run, model-call wrapper, all three
+reviewers, streaming orchestration, adjudication, defense generation and rubric
+scoring, passport assembly, the eval runner, all six API routes, the assay-sheet
+UI, and the isolated live deployment on Vercel + Turso. All of it is exercised by
+the test suite — 1054 passing, 0 skipped.
 
-**The one thing that has not happened: a real model call.** No runtime OpenAI API
-key was available to this build — not pending, never available. Exactly one
-function in the tree is unimplemented, and it is the one function that needs a
-live key: `openaiTransport` in `src/openai/client.ts`, the network hop itself.
-It sits behind an injectable `ModelTransport` seam, which is why everything
-around it — validation, retry-once, timeouts, compliance gates, telemetry,
-orchestration, adjudication, scoring, the eval harness — is implemented and
-verified offline against fake transports. Three consequences, stated without
-spin:
+**Real GPT-5.6 calls run end to end.** `openaiTransport` in
+`src/openai/client.ts` — the network hop — is implemented; no `TODO(codex)` stub
+remains. Behind its injectable `ModelTransport` seam, everything around it
+(validation, retry-once, timeouts, compliance gates, telemetry, orchestration,
+adjudication, scoring, the eval harness) is implemented and also verified offline
+against fake transports. The full pipeline — three concurrent reviewers, the
+separate adjudication step, the solver-grounded discipline verdict, defense
+scoring, the passport — completes against live **gpt-5.6-terra** (reviewers) and
+**gpt-5.6-sol** (adjudicator), verified on the seeded demo items and the labeled
+smoke set.
 
-- The reviewers, adjudication, defense scoring and eval runner have **never
-  executed against a live model**. Their real behaviour on the smoke set is
-  unknown, not merely unreported.
-- **`eval/results/` is empty.** No number anywhere in this repository came from a
-  real model call.
-- The demo video's eval segment is gated by [`RECORDING_GATE.md`](./RECORDING_GATE.md)
-  and cannot pass until a real run exists.
-
-An injectable seam proves the wiring is sound; it proves nothing about what
-GPT-5.6 actually does to a defective item. Offline verification is not a run,
-and this README never narrates it as one.
+**The eval has run** — real numbers, in [`eval/results/`](./eval/results). On the
+14 holdout items, exact counts across three runs each: the single-reviewer
+baseline finds all 12 planted defects but flags both clean items (2 false
+positives); the three specialists *without* adjudication find 10–12 but with 7–8
+false positives; the full gauntlet *with* adjudication finds 6–7 with 0–1 false
+positives. The separate adjudication step is doing exactly its job — trading some
+recall for a large precision gain. An injectable seam proves the wiring; these
+runs show what GPT-5.6 actually does to a defective item.
 
 ---
 
-## 📊 Evals — reproducible by design, honest about not having run
+## 📊 Evals — reproducible by design, honest about the numbers
 
-The eval harness (`npm run eval`, `src/eval/run.ts`) is implemented and tested;
-a live run is blocked on the same missing key as everything else.
+The eval harness (`npm run eval`, `src/eval/run.ts`) is implemented, tested, and
+**has run** against live gpt-5.6 — the artifacts are in `eval/results/`.
 
-- **Labeled smoke set** — 16 team-authored original items: 4 clean (the
-  false-positive floor), 4 ambiguous, 4 with a factual error and a source, 4 with
-  cue leak / weak distractors. Declared **author-labeled**: the same team designed
-  the defects and the labels, so it is never called a gold set. The arithmetic of
-  every labeled answer is cross-checked against the bounded solver in tests.
-- **Dev/holdout split** (8/8): dev items develop prompts and are never reported
+- **Labeled smoke set** — 28 team-authored original items: 7 clean (the
+  false-positive floor), 7 ambiguous, 7 with a factual error and a source, 7 with
+  cue leak / weak distractors. The original 16 are probability; a balanced 12-item
+  block adds statistics, triangle similarity and geometry (one per category per
+  discipline). Declared **author-labeled**: the same team designed the defects and
+  the labels, so it is never called a gold set. The arithmetic of every labeled
+  answer is cross-checked against the bounded solver in tests.
+- **Dev/holdout split** (14/14): dev items develop prompts and are never reported
   as evaluation; holdout is what gets reported.
 - **Three configurations × 3 runs each**, identical settings: `general-reviewer`
   (single-reviewer baseline), `gauntlet` (three specialists + adjudication),
@@ -308,7 +309,7 @@ git clone https://github.com/manuelpenazuniga/LaForja.git && cd LaForja
 npm install
 cp .env.example .env.local     # set OPENAI_API_KEY to enable live model calls
 npm run db:generate && npm run db:push
-npm run db:seed                # seeds the two-children demo challenge
+npm run db:seed                # seeds the four demo challenges (one per discipline)
 npm run dev                    # http://localhost:3000 — landing; the studio is at /studio
 ```
 
@@ -316,7 +317,7 @@ Verify the build the way CI does:
 
 ```bash
 npm run typecheck   # tsc --noEmit — clean
-npm run test        # vitest — 891 passing, 0 skipped
+npm run test        # vitest — 1054 passing, 0 skipped
 npm run secretscan  # also wired as a pre-commit hook
 ```
 
@@ -324,10 +325,9 @@ Notes so nothing is oversold:
 
 - Without `OPENAI_API_KEY`, everything except the reviewer/defense model calls
   works, and the UI says so instead of pretending. With a key, the calls go
-  through `openaiTransport` — the one still-unimplemented function (see
-  [Status](#-status-read-this-before-judging)).
-- `npm run eval` runs the harness up to the transport and therefore cannot
-  produce artifacts yet.
+  through `openaiTransport` (`src/openai/client.ts`), which is implemented.
+- `npm run eval` makes live gpt-5.6 calls and writes artifacts to `eval/results/`;
+  the current run is committed there.
 - Local dev and tests use plain SQLite files; production uses Turso (hosted
   libSQL) so serverless instances share one consistent database. The switch is
   automatic on the presence of `TURSO_DATABASE_URL`.
@@ -351,12 +351,14 @@ This section is binding and survives every future edit.
 - **We do not detect authorship.** A student could forge with another AI; what we
   make observable is whether they can sustain concrete decisions in a written
   defense. The passport certifies the item's process, never the person.
-- **No coverage claim** for any curriculum or exam. The demo discipline is
-  probability, full stop.
+- **No coverage claim** for any curriculum or exam. The demo covers four
+  disciplines (probability, statistics, triangle similarity, geometry) — that is a
+  mechanism demo, not curriculum coverage.
 - **Counterexamples may reveal the answer.** Accepted by design — a
   counterexample without its answer is not reproducible.
-- **No real model call has been made from this repository.** See
-  [Status](#-status-read-this-before-judging).
+- **The eval is one run, not a study.** Three runs per config over a 14-item
+  holdout set is enough to show the precision/recall tradeoff, not a large-sample
+  measurement. See [Status](#-status-read-this-before-judging).
 
 ---
 
@@ -369,12 +371,12 @@ that promises live behaviour.
 
 | Capability | State | Evidence |
 |---|---|---|
-| End-to-end create→publish route | **PARTIAL** | all five routes wired and tested offline (`tests/gauntletRoute.test.ts`, `tests/studioRoutes.test.ts`, `tests/persistence.test.ts`); live gauntlet blocked on the API key |
-| Three reviewers with schemas | **PARTIAL** | `src/reviewers/` + `REVIEWER_SCHEMAS` + `tests/prompts.test.ts`, `tests/schemas.test.ts`; never run against a live model |
-| v1→v2 history re-run | **PARTIAL** | `src/core/checks.ts` + `tests/checkRecording.test.ts` (deterministic + counterexample re-execution pinned in tests); live semantic re-adjudication blocked on the key |
-| Labeled smoke eval | **PARTIAL** | 16/16 fixtures (`src/eval/smoke/`) + implemented runner (`src/eval/run.ts`, `tests/evalRunner.test.ts`); `eval/results/` empty — no key, no run |
+| End-to-end create→publish route | **PARTIAL** | all six routes wired and tested (`tests/gauntletRoute.test.ts`, `tests/studioRoutes.test.ts`, `tests/itemRoute.test.ts`, `tests/persistence.test.ts`); the live gauntlet stage runs end to end (verified on demo + smoke items), but the full create→repair→defense→publish path has not been exercised live |
+| Three reviewers with schemas | **DONE** | `src/reviewers/` + `REVIEWER_SCHEMAS` + tests, run live against gpt-5.6-terra — verified on the demo items and the smoke eval |
+| v1→v2 history re-run | **PARTIAL** | `src/core/checks.ts` + `tests/checkRecording.test.ts` (deterministic + counterexample re-execution pinned in tests); live semantic re-adjudication is implemented but not yet exercised live |
+| Labeled smoke eval | **DONE** | 28 fixtures (`src/eval/smoke/`) + runner (`src/eval/run.ts`); live run committed to [`eval/results/`](./eval/results) — 3 configs × 3 runs on 14 holdout items |
 | Stable isolated deploy | **DONE** | <https://la-forja-edu.vercel.app> — production, seeded hosted DB, per-visitor isolated sessions verified against the deployment |
-| Bounded discipline verifier | **DONE** | `src/solver/probability.ts` + `tests/solver.test.ts` + `tests/smokeArithmetic.test.ts` (solver cross-checks every labeled answer) |
+| Bounded discipline verifier | **DONE** | four bounded solvers (`src/solver/` — probability, statistics, triangle-similarity, geometry) + `tests/solver.test.ts` + `tests/smokeArithmetic.test.ts` (solver cross-checks every labeled answer) |
 | Defense rubric | **PARTIAL** | `DefenseRubricSchema` + implemented scoring (`src/defense/viva.ts`, `tests/viva.test.ts`); no live scored example yet |
 
 Recording the demo video is gated on this matrix and on
