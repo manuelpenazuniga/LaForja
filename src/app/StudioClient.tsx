@@ -509,7 +509,11 @@ const api = {
         event = parsed.dispatchedEvent;
         return;
       }
-      throw new Error(parsed.message);
+      // Carry the server's error CODE so the handler can tell an actionable
+      // quota / rate-limit failure ("top up billing and retry") from a generic one.
+      const failure = new Error(parsed.message) as Error & { code?: string };
+      failure.code = parsed.code;
+      throw failure;
     };
 
     while (true) {
@@ -1035,10 +1039,17 @@ export default function StudioClient({
         }
         return next;
       });
+      // A quota / rate-limit failure is actionable — the gauntlet's four model
+      // calls just have no budget to run — so show the server's plain message as
+      // is, not wrapped in "did not return findings".
+      const code = err instanceof Error ? (err as Error & { code?: string }).code : undefined;
+      const budgetIssue = code === 'model_quota_exhausted' || code === 'model_rate_limited';
       setNotice({
         tone: 'warn',
-        label: 'Gauntlet',
-        text: `The gauntlet did not return findings: ${errorText(err)}`,
+        label: budgetIssue ? 'AI budget' : 'Gauntlet',
+        text: budgetIssue
+          ? errorText(err)
+          : `The gauntlet did not return findings: ${errorText(err)}`,
       });
     } finally {
       setBusy(null);

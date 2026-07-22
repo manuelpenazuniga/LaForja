@@ -732,6 +732,34 @@ async function runGauntletPipeline(
 }
 
 /**
+ * Map a pipeline failure to a CLIENT-SAFE error event. Provider, database and
+ * credential DETAILS never cross this public boundary (the message is authored
+ * here, never the raw provider text), but the CATEGORY of a quota / rate-limit
+ * failure is safe to name — and "top up billing and retry" is far more
+ * actionable to an author than "see server logs". The raw error is still logged
+ * server-side by the caller.
+ */
+export function gauntletErrorEvent(err: unknown): ErrorEvent {
+  const text = err instanceof Error ? err.message : String(err);
+  if (/insufficient_quota|exceeded your current quota|\bquota\b|billing/i.test(text)) {
+    return {
+      type: 'error',
+      code: 'model_quota_exhausted',
+      message:
+        'The AI model budget is exhausted — the provider returned an out-of-quota error. Top up the OpenAI billing, then run the gauntlet again.',
+    };
+  }
+  if (/rate.?limit|too many requests|\b429\b/i.test(text)) {
+    return {
+      type: 'error',
+      code: 'model_rate_limited',
+      message: 'The AI model is rate-limited right now. Wait a moment, then run the gauntlet again.',
+    };
+  }
+  return { type: 'error', code: 'gauntlet_failed', message: 'The gauntlet run failed. See server logs.' };
+}
+
+/**
  * The real handler. `POST` is a thin wrapper so Next.js gets the signature it
  * expects while tests can inject `GauntletRouteDeps`.
  */
@@ -804,13 +832,7 @@ export async function handleGauntlet(
         } catch (err) {
           // eslint-disable-next-line no-console
           console.error('[api/gauntlet] pipeline failed', err);
-          emit({
-            type: 'error',
-            code: 'gauntlet_failed',
-            // Provider, database, and credential details stay server-side in
-            // every environment; the streamed response is a public boundary.
-            message: 'The gauntlet run failed. See server logs.',
-          });
+          emit(gauntletErrorEvent(err));
         } finally {
           controller.close();
         }

@@ -67,6 +67,7 @@ vi.mock('@/db/client', () => ({
 const {
   completionOf,
   enterGauntlet,
+  gauntletErrorEvent,
   gauntletEventFor,
   handleGauntlet,
   resolveGauntletState,
@@ -983,5 +984,32 @@ describe('the streaming pipeline (Codex)', () => {
     const completed = events[events.length - 1] as { acceptedChecks: number; gauntletRunId: string };
     expect(completed.acceptedChecks).toBe(1);
     expect(completed.gauntletRunId).toBe(RUN_ID);
+  });
+});
+
+describe('gauntletErrorEvent — client-safe error categories', () => {
+  it('reports an out-of-quota failure as an actionable budget message, no provider text', () => {
+    const err = new Error(
+      'Model transport failed for adjudication (prompt adjudication-v1, attempt 1/2): 429 You exceeded your current quota, please check your plan and billing details. insufficient_quota',
+    );
+    const event = gauntletErrorEvent(err);
+    expect(event.code).toBe('model_quota_exhausted');
+    expect(event.message).toMatch(/budget|quota/i);
+    expect(event.message).toMatch(/billing|top up/i);
+    // The raw provider text (status line, org, request id) never crosses the boundary.
+    expect(event.message).not.toMatch(/429|insufficient_quota|prompt adjudication/i);
+  });
+
+  it('reports a rate-limit failure as retry-in-a-moment', () => {
+    const event = gauntletErrorEvent(new Error('429 Rate limit reached for requests'));
+    expect(event.code).toBe('model_rate_limited');
+    expect(event.message).toMatch(/rate-limited|wait/i);
+  });
+
+  it('falls back to the opaque generic message for any other failure', () => {
+    const event = gauntletErrorEvent(new Error('the database connection dropped'));
+    expect(event.code).toBe('gauntlet_failed');
+    expect(event.message).toBe('The gauntlet run failed. See server logs.');
+    expect(event.message).not.toMatch(/database|connection/i);
   });
 });
