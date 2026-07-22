@@ -1,0 +1,852 @@
+{
+  "config": "gauntlet",
+  "runIndex": 3,
+  "modelIds": {
+    "reviewer": "gpt-5.6-terra",
+    "adjudicator": "gpt-5.6-sol"
+  },
+  "allModelIds": [
+    "gpt-5.6-terra",
+    "gpt-5.6-sol"
+  ],
+  "settings": {
+    "reasoningEffort": "medium",
+    "contextMode": "item-plus-corpus",
+    "budget": {
+      "maxTokensPerItem": 8000,
+      "maxCallsPerItem": 4
+    }
+  },
+  "promptHash": "sha256:19652d859a1d39d0f95f1116c37a153c7522b53e5b56b38a4373888d8a225176",
+  "timestamp": "2026-07-22T03:04:11.130Z",
+  "split": "holdout",
+  "counts": {
+    "itemsEvaluated": 14,
+    "defectsPlanted": 12,
+    "defectsFound": 7,
+    "falsePositivesOnClean": 1,
+    "citationsChecked": 0,
+    "citationsPrecise": 0,
+    "schemaValid": 51,
+    "schemaTotal": 56
+  },
+  "latencyMs": {
+    "p50": 16489,
+    "p95": 24557
+  },
+  "costUsdPerItem": 0,
+  "raw": [
+    {
+      "reviewerType": "ambiguity",
+      "schemaValid": true,
+      "contract": {
+        "interpretation_a": "The two cards are drawn without replacement, as is conventional when two cards are drawn from one standard deck.",
+        "interpretation_b": "The two draws are treated as independent draws with replacement, since the stem does not explicitly state that the first card is kept out of the deck before the second draw.",
+        "answer_a": "A) 1/17",
+        "answer_b": "B) 1/16",
+        "evidence": "Under the without-replacement reading, the probability is (13/52)(12/51)=1/17. Under the with-replacement reading, each draw has probability 13/52=1/4 of being a heart, so the probability is (1/4)^2=1/16. The stem says only that two cards are drawn and does not state whether replacement occurs; although ordinary card-draw convention often implies no replacement, explicit replacement is needed to rule out the independent-draw reading."
+      }
+    },
+    {
+      "reviewerType": "discipline",
+      "schemaValid": true,
+      "contract": {
+        "claim": "Under drawing two cards without replacement from a standard 52-card deck, the probability that both cards are hearts is 1/17, so marked option A is defensible.",
+        "verdict": "unverified",
+        "citation": null,
+        "solver_proof": null
+      }
+    },
+    {
+      "reviewerType": "distractor",
+      "schemaValid": true,
+      "contract": [
+        {
+          "distractor": "B) 1/16",
+          "hypothesized_error": "This plausibly targets treating the two draws as independent/with replacement, squaring the one-draw heart probability rather than reducing the deck after the first heart.",
+          "confidence": 0.97,
+          "evidence": "The stem specifies two draws from a 52-card deck, and 1/16 equals (13/52)^2 = (1/4)^2, the result of reusing the initial one-draw heart probability for both draws.",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "C) 1/4",
+          "hypothesized_error": "This plausibly targets using the probability that a single drawn card is a heart while overlooking the requirement that both cards be hearts.",
+          "confidence": 0.96,
+          "evidence": "For the stated standard 52-card deck, the one-card heart probability is 13/52 = 1/4, which exactly matches this option despite the stem requiring two cards.",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "D) 25/102",
+          "hypothesized_error": "This may target an invalid aggregation of favorable counts across the two draws, such as combining 13 and 12 hearts into 25 while also using an incorrectly combined total-card count, rather than multiplying sequential probabilities.",
+          "confidence": 0.22,
+          "label": "hypothesis"
+        }
+      ]
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "ambiguity",
+      "schemaValid": true,
+      "contract": {
+        "interpretation_a": "“They buy bread” means all three customers each buy bread.",
+        "interpretation_b": "“They buy bread” means the group of three results in a bread purchase, i.e. at least one of the customers buys bread.",
+        "answer_a": "A) 0.343",
+        "answer_b": "B) 0.973",
+        "evidence": "The plural pronoun “they” does not explicitly say “all three” or “at least one.” Under the all-three reading, independence gives 0.7^3 = 0.343. Under the group-purchase reading, the event is the complement of none buying bread, so 1 - 0.3^3 = 0.973. Both are compatible with the unqualified phrase “they buy bread,” while the options include both values."
+      }
+    },
+    {
+      "reviewerType": "discipline",
+      "schemaValid": true,
+      "contract": {
+        "claim": "The marked answer A (0.343) is the probability that all three independently buy bread, but the stem's phrase \"they buy bread\" does not explicitly specify \"all three\" and is therefore ambiguous.",
+        "verdict": "unverified",
+        "citation": null,
+        "solver_proof": null
+      }
+    },
+    {
+      "reviewerType": "distractor",
+      "schemaValid": true,
+      "contract": [
+        {
+          "distractor": "B) 0.973",
+          "hypothesized_error": "Interpreting “they buy bread” as meaning that at least one of the three customers buys bread, rather than that all three do.",
+          "confidence": 0.98,
+          "evidence": "The option value 0.973 equals 1 - (1 - 0.7)^3 = 1 - 0.3^3, the probability that at least one customer buys bread. The author rationale explicitly states that the intended event was “all three buy bread.”",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "C) 0.7",
+          "hypothesized_error": "Treating the given probability for one customer as if it were already the probability for the group of three, without combining the independent customer outcomes.",
+          "confidence": 0.96,
+          "evidence": "The stem explicitly gives 0.7 as the probability that “any given customer” buys bread, while the question refers to three customers.",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "D) 0.9",
+          "hypothesized_error": "Possibly confusing a high individual probability with an assumed rounded group probability, rather than applying a defined probability operation to the three independent customers.",
+          "confidence": 0.18,
+          "label": "hypothesis"
+        }
+      ]
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "ambiguity",
+      "schemaValid": true,
+      "contract": {
+        "interpretation_a": "“Exactly two heads” means two heads among all three tosses.",
+        "interpretation_b": "“Exactly two heads” means two heads among the first two tosses, with the third toss not counted.",
+        "answer_a": "A) 3/8",
+        "answer_b": "C) 1/2",
+        "evidence": "The ordinary reading is that all three stated tosses are counted, giving three qualifying sequences. A reader could also treat “getting exactly two heads” as referring to obtaining two heads before the final toss, but this is not supported by the wording: “in a row” and the stated three-toss experiment naturally make all three tosses part of the count. Thus the second reading is not sufficiently reasonable as an ambiguity in the item."
+      }
+    },
+    {
+      "reviewerType": "discipline",
+      "schemaValid": true,
+      "contract": {
+        "claim": "For three tosses of a fair coin, the probability of exactly two heads is 3/8 (option A).",
+        "verdict": "unverified",
+        "citation": null,
+        "solver_proof": null
+      }
+    },
+    {
+      "reviewerType": "distractor",
+      "schemaValid": true,
+      "contract": [
+        {
+          "distractor": "B) 1/8",
+          "hypothesized_error": "Treating “exactly two heads” as one particular ordered outcome (for example, HHT) rather than recognizing all three orderings of two heads.",
+          "confidence": 0.99,
+          "evidence": "The author rationale explicitly states: “1/8 corresponds to fixing one specific sequence.”",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "C) 1/2",
+          "hypothesized_error": "Applying an unsupported symmetry intuition, such as assuming that exactly two heads is as likely as its complement or as likely as another broad outcome category.",
+          "confidence": 0.95,
+          "evidence": "The author rationale explicitly identifies “1/2” as corresponding to “naive symmetry.”",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "D) 1/4",
+          "hypothesized_error": "Undercounting the favorable ordered sequences by counting only two cases with exactly two heads instead of HHT, HTH, and THH.",
+          "confidence": 0.99,
+          "evidence": "The author rationale explicitly states that “1/4” corresponds to “counting only two favorable sequences.”",
+          "label": "evidenced"
+        }
+      ]
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "ambiguity",
+      "schemaValid": true,
+      "contract": {
+        "interpretation_a": "Inclusive mathematical 'or': the drawn card is an ace, a club, or both.",
+        "interpretation_b": "Exclusive everyday-language 'or': the drawn card is an ace or a club, but not both.",
+        "answer_a": "A) 4/13",
+        "answer_b": "B) 17/52",
+        "evidence": "The stem uses the unqualified word 'or' and does not state whether overlap is included. In probability/set language, 'ace or club' conventionally includes the ace of clubs, giving 4+13-1=16 cards and 16/52=4/13. In ordinary English, 'or' can reasonably be read exclusively ('one category rather than the other'); excluding the ace of clubs leaves 3 non-club aces plus 12 non-ace clubs, or 15 cards, which is 15/52—not B. Therefore the exclusive reading does not yield any listed option, so it cannot establish the required two different correct option answers."
+      }
+    },
+    {
+      "reviewerType": "discipline",
+      "schemaValid": true,
+      "contract": {
+        "claim": "The marked answer A (4/13) is the probability that a single card drawn from a standard 52-card deck is an ace or a club.",
+        "verdict": "unverified",
+        "citation": null,
+        "solver_proof": null
+      }
+    },
+    {
+      "reviewerType": "distractor",
+      "schemaValid": true,
+      "contract": [
+        {
+          "distractor": "B) 17/52",
+          "hypothesized_error": "The student adds the 4 aces and 13 clubs without subtracting the ace of clubs, double-counting the overlap.",
+          "confidence": 0.99,
+          "evidence": "The author rationale explicitly states that \"17/52 forgets inclusion-exclusion and simply adds 4 + 13.\"",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "C) 1/4",
+          "hypothesized_error": "The student counts only clubs and ignores the additional non-club aces.",
+          "confidence": 0.99,
+          "evidence": "The author rationale explicitly states that \"1/4 = 13/52 counts only the clubs.\"",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "D) 1/13",
+          "hypothesized_error": "The student counts only aces and ignores the non-ace clubs.",
+          "confidence": 0.99,
+          "evidence": "The author rationale explicitly states that \"1/13 = 4/52 counts only the aces.\"",
+          "label": "evidenced"
+        }
+      ]
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "ambiguity",
+      "schemaValid": true,
+      "contract": {
+        "interpretation_a": "“Complementary event” is read in the standard probability sense: the event A^c consisting of outcomes not in A.",
+        "interpretation_b": "“Complementary” is read in the ordinary arithmetic sense of a number that completes 0.3 to a whole, with the intended whole not explicitly specified; taking the relevant whole as 3 gives 3 - 0.3.",
+        "answer_a": "A) 0.7",
+        "answer_b": "C) -0.3",
+        "evidence": "The standard mathematical reading is directly supported by the probability notation and yields 1-P(A). However, the stem does not explicitly state that a probability complement is relative to the unit total sample space, and “complementary” can colloquially/arithmeticly mean a quantity needed to reach a chosen total. This alternative is much less natural in probability context, but it is not a reasonable domain interpretation because probabilities are defined relative to total probability 1; therefore no genuine ambiguity with two defensible different answers can be verified."
+      }
+    },
+    {
+      "reviewerType": "discipline",
+      "schemaValid": true,
+      "contract": {
+        "claim": "The marked answer A, 0.7, is the probability of the complementary event when P(A)=0.3.",
+        "verdict": "unverified",
+        "citation": null,
+        "solver_proof": null
+      }
+    },
+    {
+      "reviewerType": "distractor",
+      "schemaValid": true,
+      "contract": [
+        {
+          "distractor": "B) 3",
+          "hypothesized_error": "Treating 0.3 as if it should be shifted one decimal place, or otherwise ignoring that probabilities must lie between 0 and 1, rather than applying the complement rule.",
+          "confidence": 0.55,
+          "evidence": "The author rationale explicitly states that all three incorrect options fall outside [0,1], so this option can be eliminated without using the complement concept.",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "C) -0.3",
+          "hypothesized_error": "Negating the given probability instead of subtracting it from 1 when forming a complement.",
+          "confidence": 0.95,
+          "evidence": "This option is exactly the negative of the stated value P(A)=0.3, matching a sign-negation error.",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "D) 1.3",
+          "hypothesized_error": "Adding the given probability to 1 instead of subtracting it from 1 in the complement formula.",
+          "confidence": 0.95,
+          "evidence": "This option equals 1 + 0.3, directly corresponding to using addition rather than P(A^c)=1-P(A).",
+          "label": "evidenced"
+        }
+      ]
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "ambiguity",
+      "schemaValid": true,
+      "contract": {
+        "interpretation_a": "“Sample space” is being asked in its standard probability sense: the collection of all elementary outcomes of one die roll.",
+        "interpretation_b": "“Sample space” is being asked for a representation of the outcome set, where the answer may name its size rather than list the set itself.",
+        "answer_a": "B) The set of all the possible outcomes of the experiment, that is, the faces 1, 2, 3, 4, 5 and 6 of the fair die",
+        "answer_b": "A) The number 6",
+        "evidence": "Reading A is directly supported by the usual definition of a sample space as a set of possible outcomes, and B explicitly gives that set. Reading B is defensible because “what does the sample space ... represent?” can be read as asking for the number of possible outcomes represented by the space; for a six-faced die that number is 6, which A states. However, this is a weak ambiguity: in standard terminology, 6 is the cardinality of the sample space, not the sample space itself."
+      }
+    },
+    {
+      "reviewerType": "discipline",
+      "schemaValid": true,
+      "contract": {
+        "claim": "The marked answer B correctly states that the sample space for one roll of a fair six-faced die is the set of all possible outcomes, {1,2,3,4,5,6}.",
+        "verdict": "unverified",
+        "citation": null,
+        "solver_proof": null
+      }
+    },
+    {
+      "reviewerType": "distractor",
+      "schemaValid": true,
+      "contract": [
+        {
+          "distractor": "A) The number 6",
+          "hypothesized_error": "The option may target confusing one possible outcome (rolling a 6) with the sample space, which is the collection of all possible outcomes.",
+          "confidence": 0.98,
+          "evidence": "Option A names a single die face, while the stem asks what the sample space represents and option B explicitly identifies the sample space as the set of all faces 1 through 6.",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "C) The probability",
+          "hypothesized_error": "The option may target conflating a sample space with probabilities assigned to outcomes.",
+          "confidence": 0.94,
+          "evidence": "The stem concerns a die-roll experiment, for which probabilities are related to, but distinct from, the set of possible outcomes described in option B and the author rationale.",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "D) The average",
+          "hypothesized_error": "The option may target confusing the sample space with a numerical summary such as the mean result of a die roll.",
+          "confidence": 0.9,
+          "evidence": "Option D is a numerical-summary concept, whereas option B and the author rationale define the sample space as a set of possible outcomes.",
+          "label": "evidenced"
+        }
+      ]
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": true,
+        "lexical_overlap_flag": true,
+        "answer_length_ratio": 3.125,
+        "lexical_overlap_score": 0.6666666666666666
+      }
+    },
+    {
+      "reviewerType": "ambiguity",
+      "schemaValid": true,
+      "contract": {
+        "interpretation_a": "“Without replacement” has its standard meaning: after the first ball is drawn, it is not returned before the second draw.",
+        "interpretation_b": "The wording is read as an ordinary two-draw experiment but the author’s marked-key calculation treats the bag composition as unchanged between draws, effectively interpreting the process as replacement.",
+        "answer_a": "2/15 (option B)",
+        "answer_b": "4/25 (option A)",
+        "evidence": "The stem explicitly says “without replacement,” which supports interpretation A: P(white then white)=(4/10)(3/9)=2/15. However, interpretation B is not defensible from the stem as written: it contradicts the explicit phrase “without replacement.” The author rationale documents a key error, not a genuine textual ambiguity."
+      }
+    },
+    {
+      "reviewerType": "discipline",
+      "schemaValid": true,
+      "contract": {
+        "claim": "The marked answer A, 4/25, is the probability that both balls are white when two balls are drawn without replacement from 4 white and 6 black balls.",
+        "verdict": "incorrect",
+        "citation": null,
+        "solver_proof": {
+          "discipline": "probability",
+          "problem_kind": "without_replacement_two_successes",
+          "inputs": {
+            "population": 10,
+            "successes": 4,
+            "draws": 2
+          },
+          "computed_value": "2/15",
+          "steps": [
+            "First draw white probability: 4/10.",
+            "Conditional on a white first draw, 3 white balls remain among 9 total balls, so second draw white probability: 3/9.",
+            "Multiply: (4/10)*(3/9)=12/90=2/15.",
+            "Since 2/15 is not equal to 4/25, the marked answer is false."
+          ],
+          "solver_version": "discipline-v1"
+        }
+      }
+    },
+    {
+      "reviewerType": "distractor",
+      "schemaValid": true,
+      "contract": [
+        {
+          "distractor": "B) 2/15",
+          "hypothesized_error": "This appears to be the correct without-replacement calculation rather than a misconception-based distractor; because the author marked A, it may unintentionally function as an unkeyed correct option.",
+          "confidence": 0.98,
+          "evidence": "The stem states that draws are \"without replacement,\" while the author rationale says A was obtained using with-replacement multiplication. For two white draws without replacement, the successive factors are 4/10 and 3/9, whose product is 2/15.",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "C) 2/5",
+          "hypothesized_error": "A student may use only the probability that the first ball is white, 4/10 = 2/5, and ignore the requirement that the second ball must also be white.",
+          "confidence": 0.84,
+          "label": "hypothesis"
+        },
+        {
+          "distractor": "D) 1/5",
+          "hypothesized_error": "A student may make an unsupported simplification or combine the ball counts incorrectly when attempting a two-draw probability calculation.",
+          "confidence": 0.22,
+          "label": "hypothesis"
+        }
+      ]
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "ambiguity",
+      "schemaValid": true,
+      "contract": {
+        "interpretation_a": "“It is returned to the urn” means the first ball is replaced before the second draw, so the urn again has 3 green balls out of 8.",
+        "interpretation_b": "“It is returned to the urn” could be read as merely describing what happens after the two-draw procedure rather than before the second draw, so the second draw is from the remaining 7 balls.",
+        "answer_a": "B) 9/64",
+        "answer_b": "A) 3/28",
+        "evidence": "Reading A follows the ordinary sequential wording: “it is returned to the urn. A second ball is then drawn” places replacement before the second draw. Reading B is less natural but can be defended if “then” is taken to refer to returning the recorded ball after the experiment; however, the explicit sentence order strongly favors A, so this is not a robust genuine ambiguity."
+      }
+    },
+    {
+      "reviewerType": "discipline",
+      "schemaValid": true,
+      "contract": {
+        "claim": "The author-marked answer A, 3/28, is the probability that both draws are green under the stated return-to-the-urn procedure.",
+        "verdict": "incorrect",
+        "citation": null,
+        "solver_proof": {
+          "discipline": "probability",
+          "problem_kind": "urn_draws_with_replacement",
+          "inputs": {
+            "initial_counts": "red=5; green=3; total=8",
+            "draws": 2,
+            "replacement": true,
+            "event": "both draws are green"
+          },
+          "computed_value": "9/64",
+          "steps": [
+            "With replacement, the urn composition before each draw is red=5, green=3, total=8.",
+            "The probability of green on each draw is 3/8.",
+            "For two draws with replacement, multiply: (3/8)*(3/8)=9/64."
+          ],
+          "solver_version": "discipline-v1"
+        }
+      }
+    },
+    {
+      "reviewerType": "distractor",
+      "schemaValid": true,
+      "contract": [
+        {
+          "distractor": "A) 3/28",
+          "hypothesized_error": "Treating the draws as without replacement, so that after drawing a green ball the second-draw probability is taken as 2/7 rather than 3/8.",
+          "confidence": 1,
+          "evidence": "The author rationale explicitly states that 3/28 was computed as (3/8)·(2/7) by treating the second draw as occurring over a reduced set, despite the stated replacement.",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "C) 6/64",
+          "hypothesized_error": "Partially accounting for replacement by retaining a denominator of 8 on the second draw while incorrectly reducing the number of green balls from 3 to 2.",
+          "confidence": 0.82,
+          "label": "hypothesis"
+        },
+        {
+          "distractor": "D) 1/4",
+          "hypothesized_error": "Using an oversimplified estimate of one quarter rather than multiplying the stated per-draw green probability for two independent draws.",
+          "confidence": 0.42,
+          "label": "hypothesis"
+        }
+      ]
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "ambiguity",
+      "schemaValid": true,
+      "contract": {
+        "interpretation_a": "The 6 cm and 8 cm sides are the two legs of the right triangle.",
+        "interpretation_b": "The 8 cm side is the hypotenuse and the 6 cm side is a leg.",
+        "answer_a": "10 (option A)",
+        "answer_b": "sqrt(8^2 - 6^2) = sqrt(28) ≈ 5.29 (option B)",
+        "evidence": "The stem says only that two sides measure 6 cm and 8 cm; it does not identify either side as a leg or as the hypotenuse. Both readings form valid right triangles: legs 6 and 8 give remaining side 10, while hypotenuse 8 and leg 6 give remaining side sqrt(28) ≈ 5.29."
+      }
+    },
+    {
+      "reviewerType": "discipline",
+      "schemaValid": false
+    },
+    {
+      "reviewerType": "distractor",
+      "schemaValid": true,
+      "contract": [
+        {
+          "distractor": "B) 5.29",
+          "hypothesized_error": "A student may assume that 8 cm is the hypotenuse and use the Pythagorean theorem as sqrt(8^2 - 6^2), obtaining approximately 5.29. This is also a mathematically valid interpretation of the underspecified stem, rather than necessarily an error.",
+          "confidence": 0.98,
+          "label": "hypothesis"
+        },
+        {
+          "distractor": "C) 14",
+          "hypothesized_error": "A student may add the two given side lengths, 6 + 8, instead of applying the Pythagorean theorem.",
+          "confidence": 0.88,
+          "label": "hypothesis"
+        },
+        {
+          "distractor": "D) 7",
+          "hypothesized_error": "This may target an unsupported estimate or a mistaken attempt to infer a third side without correctly applying the Pythagorean theorem; the specific calculation leading to 7 is not clear from the item.",
+          "confidence": 0.22,
+          "label": "hypothesis"
+        }
+      ]
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "ambiguity",
+      "schemaValid": true,
+      "contract": {
+        "interpretation_a": "“Triangular sail” is read as an ordinary geometric triangle, with the stated base and corresponding perpendicular height.",
+        "interpretation_b": "“Area of the sail” is read as the amount of triangular sailcloth needed when the stated 9 m by 6 m dimensions describe its rectangular/parallelogram material layout before cutting or folding into a triangular sail.",
+        "answer_a": "A) 27",
+        "answer_b": "B) 54",
+        "evidence": "The ordinary mathematical reading of a triangular region uses one-half times base times corresponding height, giving 27. However, in practical sailmaking, “area of the sail” can be used loosely for required material or bounding-panel area; a 9 m by 6 m rectangular/parallelogram panel has area 54 before a triangular shape is cut from it. The stem does not explicitly say whether it asks for the geometric area enclosed by the triangular boundary or the amount of material in its pre-cut layout."
+      }
+    },
+    {
+      "reviewerType": "discipline",
+      "schemaValid": false
+    },
+    {
+      "reviewerType": "distractor",
+      "schemaValid": true,
+      "contract": [
+        {
+          "distractor": "A) 27",
+          "hypothesized_error": "This does not plausibly capture a misconception: it is the result of correctly applying one-half times base times corresponding height, so it functions as the mathematically correct answer despite being presented as a distractor.",
+          "confidence": 0.99,
+          "evidence": "The stem gives base 9 and height 6, and the author rationale explicitly states that the author \"forgot the factor of one-half in the triangle-area formula.\" Applying that omitted factor to 9 × 6 gives 27.",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "C) 45",
+          "hypothesized_error": "Possibly subtracting the base once from the rectangle/parallelogram area, i.e., computing 9 × 6 − 9, rather than using the triangle-area formula.",
+          "confidence": 0.28,
+          "label": "hypothesis"
+        },
+        {
+          "distractor": "D) 18",
+          "hypothesized_error": "Possibly using an unsupported division-by-three operation on base times height, i.e., 9 × 6 ÷ 3, reflecting confusion about the fraction used in an area formula.",
+          "confidence": 0.22,
+          "label": "hypothesis"
+        }
+      ]
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "ambiguity",
+      "schemaValid": true,
+      "contract": {
+        "interpretation_a": "Use the exclusive-median convention for an odd-sized dataset: omit the overall median 6 before finding the medians of the lower and upper halves.",
+        "interpretation_b": "Use the inclusive-median convention for an odd-sized dataset: include the overall median 6 in both the lower and upper halves before finding their medians.",
+        "answer_a": "B) 7",
+        "answer_b": "A) 6",
+        "evidence": "The stem asks only for IQR and does not specify a quartile convention. Under the exclusive convention, the halves are (1, 3, 4) and (9, 10, 15), giving quartiles 3 and 10. Under the also-standard inclusive convention, the halves are (1, 3, 4, 6) and (6, 9, 10, 15), giving quartiles 3.5 and 9.5. Thus the unspecified convention produces different listed answers."
+      }
+    },
+    {
+      "reviewerType": "discipline",
+      "schemaValid": true,
+      "contract": {
+        "claim": "Using the stated exclusive-median quartile convention for the ordered dataset 1, 3, 4, 6, 9, 10, 15 yields an interquartile range of 7, so option B is defensible.",
+        "verdict": "unverified",
+        "citation": null,
+        "solver_proof": null
+      }
+    },
+    {
+      "reviewerType": "distractor",
+      "schemaValid": true,
+      "contract": [
+        {
+          "distractor": "A) 6",
+          "hypothesized_error": "Using an inclusive-median quartile convention rather than the stated exclusive convention; this yields lower and upper half medians of 3.5 and 9.5, respectively.",
+          "confidence": 0.93,
+          "evidence": "The rationale explicitly specifies that the median 6 is excluded from both halves. Including 6 in both four-value halves gives quartiles 3.5 and 9.5, whose difference is 6.",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "C) 9",
+          "hypothesized_error": "Treating the minimum value as Q1 while retaining 10 as the upper quartile, effectively computing 10 - 1.",
+          "confidence": 0.72,
+          "evidence": "The listed data contain 1, and the rationale identifies Q3 as 10; 10 - 1 = 9.",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "D) 14",
+          "hypothesized_error": "Confusing the interquartile range with the full range.",
+          "confidence": 0.99,
+          "evidence": "The dataset's minimum and maximum are 1 and 15, and 15 - 1 = 14.",
+          "label": "evidenced"
+        }
+      ]
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "ambiguity",
+      "schemaValid": true,
+      "contract": {
+        "interpretation_a": "“Population variance” is read in its standard statistical sense for the entire stated population, using the population mean and divisor N.",
+        "interpretation_b": "“Population variance” is read under a classroom convention in which the listed values are treated as the observed data set and “variance” is computed with the sample (n−1) correction despite the population wording.",
+        "answer_a": "8 (option A)",
+        "answer_b": "10 (option B)",
+        "evidence": "The stem explicitly says the five values “constitute an entire small population,” which defensibly calls for division by N=5: the stated squared-deviation total is 40, giving 40/5=8. However, many introductory exercises and software conventions use the unqualified data-set/sample variance with Bessel’s correction, dividing the same total by n−1=4 and yielding 10; the options include both results and the marked key/rationale explicitly adopts that convention. Thus the term “variance” can be read as population variance in the formal parameter sense or as the corrected empirical variance convention, producing different option answers."
+      }
+    },
+    {
+      "reviewerType": "discipline",
+      "schemaValid": true,
+      "contract": {
+        "claim": "The marked answer B) 10 is the population variance of the entire population 2, 4, 6, 8, 10.",
+        "verdict": "incorrect",
+        "citation": null,
+        "solver_proof": {
+          "discipline": "statistics",
+          "problem_kind": "population_variance",
+          "inputs": {
+            "population_values": "2,4,6,8,10"
+          },
+          "computed_value": "8",
+          "steps": [
+            "n=5",
+            "mean=6",
+            "sum_squared_deviations=40",
+            "population_variance=40/5=8"
+          ],
+          "solver_version": "discipline-v1"
+        }
+      }
+    },
+    {
+      "reviewerType": "distractor",
+      "schemaValid": true,
+      "contract": [
+        {
+          "distractor": "A) 8",
+          "hypothesized_error": "This may target an incorrect arithmetic calculation of the variance, such as computing the squared deviations or their average incorrectly.",
+          "confidence": 0.28,
+          "label": "hypothesis"
+        },
+        {
+          "distractor": "C) 6",
+          "hypothesized_error": "This may target confusing the population mean (6) with the population variance.",
+          "confidence": 0.7,
+          "evidence": "The stem's values have mean 6, and option C is 6.",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "D) 40",
+          "hypothesized_error": "This targets stopping at the sum of squared deviations (40) rather than dividing by the population size to obtain variance.",
+          "confidence": 0.98,
+          "evidence": "The author rationale explicitly identifies the sum of squared deviations as 40.",
+          "label": "evidenced"
+        }
+      ]
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": true,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 1
+      }
+    },
+    {
+      "reviewerType": "ambiguity",
+      "schemaValid": true,
+      "contract": {
+        "interpretation_a": "The 15 cm side in the second triangle corresponds to the 6 cm side of the first triangle; the other listed side is therefore the side corresponding to 10 cm.",
+        "interpretation_b": "The 15 cm side in the second triangle corresponds to the 10 cm side of the first triangle; the other listed side is therefore the side corresponding to 6 cm.",
+        "answer_a": "A) 25 cm",
+        "answer_b": "B) 9 cm",
+        "evidence": "The stem says only that the 15 cm side “corresponds to one of those two sides,” without identifying whether it corresponds to 6 cm or 10 cm. Both are explicitly listed sides of the first triangle and both correspondence assignments are compatible with similarity. Under the first reading the scale factor is 15/6, giving 10(15/6)=25; under the second it is 15/10, giving 6(15/10)=9."
+      }
+    },
+    {
+      "reviewerType": "discipline",
+      "schemaValid": false
+    },
+    {
+      "reviewerType": "distractor",
+      "schemaValid": true,
+      "contract": [
+        {
+          "distractor": "B) 9 cm",
+          "hypothesized_error": "This may represent treating the 15 cm side as corresponding to the 10 cm side rather than to the 6 cm side. Because the stem does not identify which correspondence applies, this is a legitimate alternate interpretation rather than necessarily a student error.",
+          "confidence": 0.99,
+          "evidence": "The stem says the 15 cm side \"corresponds to one of those two sides,\" without specifying which; the author rationale explicitly assumes it corresponds to 6 cm.",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "C) 18 cm",
+          "hypothesized_error": "This might be intended to capture use of an unsupported scale factor of 3 on the 6 cm side, rather than determining a similarity ratio from corresponding sides.",
+          "confidence": 0.15,
+          "label": "hypothesis"
+        },
+        {
+          "distractor": "D) 21 cm",
+          "hypothesized_error": "This may target additive reasoning—adding the given 15 cm second-triangle side to the 6 cm first-triangle side—instead of using a multiplicative similarity scale factor.",
+          "confidence": 0.76,
+          "evidence": "21 cm is the sum of the two explicitly given lengths 15 cm and 6 cm.",
+          "label": "evidenced"
+        }
+      ]
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": true,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0.5
+      }
+    },
+    {
+      "reviewerType": "ambiguity",
+      "schemaValid": false
+    },
+    {
+      "reviewerType": "discipline",
+      "schemaValid": false
+    },
+    {
+      "reviewerType": "distractor",
+      "schemaValid": true,
+      "contract": [
+        {
+          "distractor": "A) 26 cm",
+          "hypothesized_error": "Treating similarity as preservation of an additive side-length difference: since DE is 12 cm longer than AB, adding 12 to BC to obtain EF.",
+          "confidence": 1,
+          "evidence": "The author rationale explicitly states: \"DE is 20 - 8 = 12 cm longer than AB, so EF must be 12 cm longer than BC, giving 14 + 12 = 26 cm.\"",
+          "label": "evidenced"
+        },
+        {
+          "distractor": "C) 32 cm",
+          "hypothesized_error": "An unsupported arithmetic combination of the supplied lengths, rather than applying the common multiplicative scale factor between corresponding sides.",
+          "confidence": 0.18,
+          "label": "hypothesis"
+        },
+        {
+          "distractor": "D) 40 cm",
+          "hypothesized_error": "Overestimating the scale by treating the 20 cm corresponding side as if it implied a simple doubling or otherwise using an incorrect whole-number scaling heuristic instead of the ratio 20/8.",
+          "confidence": 0.2,
+          "label": "hypothesis"
+        }
+      ]
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": true,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0.5
+      }
+    }
+  ]
+}

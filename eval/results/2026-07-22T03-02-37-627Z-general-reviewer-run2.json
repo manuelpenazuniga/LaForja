@@ -1,0 +1,291 @@
+{
+  "config": "general-reviewer",
+  "runIndex": 2,
+  "modelIds": {
+    "reviewer": "gpt-5.6-terra",
+    "adjudicator": null
+  },
+  "allModelIds": [
+    "gpt-5.6-terra"
+  ],
+  "settings": {
+    "reasoningEffort": "medium",
+    "contextMode": "item-plus-corpus",
+    "budget": {
+      "maxTokensPerItem": 8000,
+      "maxCallsPerItem": 4
+    }
+  },
+  "promptHash": "sha256:19652d859a1d39d0f95f1116c37a153c7522b53e5b56b38a4373888d8a225176",
+  "timestamp": "2026-07-22T03:02:37.627Z",
+  "split": "holdout",
+  "counts": {
+    "itemsEvaluated": 14,
+    "defectsPlanted": 12,
+    "defectsFound": 12,
+    "falsePositivesOnClean": 2,
+    "citationsChecked": 0,
+    "citationsPrecise": 0,
+    "schemaValid": 14,
+    "schemaTotal": 14
+  },
+  "latencyMs": {
+    "p50": 1691,
+    "p95": 2683
+  },
+  "costUsdPerItem": 0,
+  "raw": [
+    {
+      "reviewerType": "general",
+      "schemaValid": true,
+      "contract": {
+        "defect_type": "ambiguity",
+        "evidence": "The stem does not state whether the two cards are drawn with or without replacement. The marked answer A (1/17) assumes without replacement, while drawing with replacement would give 1/16 (option B)."
+      }
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "general",
+      "schemaValid": true,
+      "contract": {
+        "defect_type": "ambiguity",
+        "evidence": "The stem asks \"What is the probability that they buy bread?\" without specifying whether this means all three buy bread, at least one buys bread, or each individual buys bread. The marked answer A assumes \"all three,\" but that condition is not stated."
+      }
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "general",
+      "schemaValid": true,
+      "contract": {
+        "defect_type": "weak_distractor",
+        "evidence": "Option C (1/2) is an implausible distractor for the stated event: although heads/tails symmetry makes P(exactly two heads) equal to P(exactly one head), it does not support 1/2. The rationale's label \"naive symmetry\" does not identify a clear, likely misconception yielding 1/2."
+      }
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "general",
+      "schemaValid": true,
+      "contract": {
+        "defect_type": "factual_error",
+        "evidence": "The author rationale misstates the distractor mapping: it says “1/4 = 13/52 counts only the clubs,” but 13/52 simplifies to 1/4, and “1/13 = 4/52 counts only the aces” is also correct. However, the claimed correct answer 4/13 follows correctly from 16/52, so there is no factual defect in the item itself."
+      }
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "general",
+      "schemaValid": true,
+      "contract": {
+        "defect_type": "weak_distractor",
+        "evidence": "The distractors B) 3, C) -0.3, and D) 1.3 are all invalid probabilities because probabilities must lie in [0,1]. Thus they can be eliminated by a basic range check without applying the complementary-event rule, making A) 0.7 the only plausible option."
+      }
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "general",
+      "schemaValid": true,
+      "contract": {
+        "defect_type": "cue_leak",
+        "evidence": "Option B is conspicuously much longer and more detailed than A, C, and D, and it repeats stem-specific wording (“experiment,” “faces,” “fair die,” and 1–6), making it identifiable as the correct answer by test-taking cues rather than knowledge."
+      }
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": true,
+        "lexical_overlap_flag": true,
+        "answer_length_ratio": 3.125,
+        "lexical_overlap_score": 0.6666666666666666
+      }
+    },
+    {
+      "reviewerType": "general",
+      "schemaValid": true,
+      "contract": {
+        "defect_type": "factual_error",
+        "evidence": "The marked key A (4/25) is incorrect: because the draws are without replacement, the probability is (4/10)*(3/9)=2/15, which is option B. The author's calculation incorrectly treats the second draw as still having 4 white balls out of 10."
+      }
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "general",
+      "schemaValid": true,
+      "contract": {
+        "defect_type": "factual_error",
+        "evidence": "The marked correct answer A (3/28) is incorrect: because the first ball is returned, the draws are independent and the probability is (3/8)*(3/8)=9/64, which is option B."
+      }
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "general",
+      "schemaValid": true,
+      "contract": {
+        "defect_type": "ambiguity",
+        "evidence": "The stem only says that two sides are 6 cm and 8 cm; it does not specify that they are the legs. If 8 cm is the hypotenuse and 6 cm is a leg, the remaining side is √(8²−6²)=√28≈5.29, so both A and B can be correct."
+      }
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "general",
+      "schemaValid": true,
+      "contract": {
+        "defect_type": "factual_error",
+        "evidence": "The marked correct key B (54) is incorrect: a triangle with base 9 m and corresponding height 6 m has area (1/2)×9×6 = 27 square meters, which is option A."
+      }
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "general",
+      "schemaValid": true,
+      "contract": {
+        "defect_type": "ambiguity",
+        "evidence": "The item does not specify which quartile convention to use. With the stated exclusive-median method, IQR = 7, but other standard conventions for an odd-sized dataset include the median in each half and yield Q1 = 3.5, Q3 = 9.5, so IQR = 6 (option A)."
+      }
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": false,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0
+      }
+    },
+    {
+      "reviewerType": "general",
+      "schemaValid": true,
+      "contract": {
+        "defect_type": "factual_error",
+        "evidence": "The marked correct key B (10) uses the sample-variance divisor n−1, but the stem asks for the variance of the entire population. Population variance divides the squared-deviation total 40 by N=5, yielding 8 (option A)."
+      }
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": true,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 1
+      }
+    },
+    {
+      "reviewerType": "general",
+      "schemaValid": true,
+      "contract": {
+        "defect_type": "ambiguity",
+        "evidence": "The stem says only that the 15 cm side “corresponds to one of those two sides,” without specifying whether it corresponds to 6 cm or 10 cm. If it corresponds to 6 cm, the other side is 25 cm; if it corresponds to 10 cm, the other side is 9 cm. Thus both A and B are supported."
+      }
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": true,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0.5
+      }
+    },
+    {
+      "reviewerType": "general",
+      "schemaValid": true,
+      "contract": {
+        "defect_type": "factual_error",
+        "evidence": "The marked correct key A (26 cm) is incorrect. Since DE/AB = 20/8 = 2.5, the corresponding side EF must equal 14 × 2.5 = 35 cm, which is option B."
+      }
+    },
+    {
+      "reviewerType": "item_probe",
+      "schemaValid": true,
+      "contract": {
+        "answer_length_flag": false,
+        "lexical_overlap_flag": true,
+        "answer_length_ratio": 1,
+        "lexical_overlap_score": 0.5
+      }
+    }
+  ]
+}
