@@ -1288,11 +1288,22 @@ export default function StudioClient({
       case 'GAUNTLET':
         return { step: 'step 02', text: 'The reviewers are examining your item…', action: null };
       case 'CHALLENGED':
-        return {
-          step: 'steps 03–04',
-          text: 'A counterexample was accepted. Read it, then repair the stem.',
-          action: { kind: 'goto', target: 'repair', label: 'Go to the repair' },
-        };
+        // previousVersion !== null means a repair already ran and the history
+        // re-run sent the item back here — the counterexample still holds. The
+        // first-time message ("read it, then repair") would be misleading now, so
+        // say WHY it is blocked and what can and cannot move it forward.
+        return previousVersion === null
+          ? {
+              step: 'steps 03–04',
+              text: 'A counterexample was accepted. Read it, then repair the stem.',
+              action: { kind: 'goto', target: 'repair', label: 'Go to the repair' },
+            }
+          : {
+              step: 'steps 03–04',
+              text: 'The re-run re-executed the counterexample and it STILL holds, so publication stays blocked. Revise the item so the two readings no longer yield different answers, then resubmit. If the defect is a genuine, irreducible ambiguity (two fixed answers), no repair can pass this check — that block is the point.',
+              action: { kind: 'goto', target: 'repair', label: 'Revise and resubmit' },
+              note: 'non-regression: a repair cannot publish an item whose recorded counterexample still holds',
+            };
       case 'REGRESSION':
         return {
           step: 'step 05',
@@ -1320,7 +1331,7 @@ export default function StudioClient({
       default:
         return { step: 'state', text: STATE_COPY[state].note, action: null };
     }
-  }, [item, state, modelCallsAvailable]);
+  }, [item, state, modelCallsAvailable, previousVersion]);
 
   const runNextMove = useCallback(() => {
     const action = nextMove.action;
