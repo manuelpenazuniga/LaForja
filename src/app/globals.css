@@ -61,6 +61,10 @@
   --serif: var(--font-serif), ui-serif, Georgia, 'Times New Roman', serif;
   --mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
+  /* motion — strong curves; the built-in CSS easings are too weak */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
   /* geometry */
   --r-lg: 20px;
   --r-md: 14px;
@@ -194,7 +198,7 @@ ol {
     background-color 150ms ease,
     color 150ms ease,
     box-shadow 150ms ease,
-    transform 120ms ease;
+    transform 160ms var(--ease-out);
 }
 
 .btn:hover:not(:disabled) {
@@ -202,7 +206,7 @@ ol {
 }
 
 .btn:active:not(:disabled) {
-  transform: translateY(1px) scale(0.99);
+  transform: scale(0.97);
 }
 
 .btn--forge {
@@ -329,11 +333,11 @@ ol {
     background-color 150ms ease,
     color 150ms ease,
     box-shadow 150ms ease,
-    transform 120ms ease;
+    transform 160ms var(--ease-out);
 }
 
 .lp-btn:active {
-  transform: translateY(1px) scale(0.99);
+  transform: scale(0.97);
 }
 
 .lp-btn--brand {
@@ -391,7 +395,7 @@ ol {
   font-size: 13px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  animation: lp-rise 500ms 40ms ease-out both;
+  animation: lp-rise 500ms 40ms var(--ease-out) both;
 }
 
 .lp-hero__title {
@@ -401,7 +405,7 @@ ol {
   font-weight: 800;
   letter-spacing: -0.015em;
   line-height: 1.02;
-  animation: lp-rise 500ms 120ms ease-out both;
+  animation: lp-rise 500ms 120ms var(--ease-out) both;
 }
 
 .lp-hero__title em {
@@ -418,7 +422,7 @@ ol {
   color: var(--smoke-soft);
   font-size: clamp(16px, 2vw, 18.5px);
   line-height: 1.65;
-  animation: lp-rise 500ms 200ms ease-out both;
+  animation: lp-rise 500ms 200ms var(--ease-out) both;
 }
 
 .lp-hero__actions {
@@ -427,7 +431,7 @@ ol {
   gap: var(--s3) var(--s4);
   justify-content: center;
   margin-top: var(--s6);
-  animation: lp-rise 500ms 280ms ease-out both;
+  animation: lp-rise 500ms 280ms var(--ease-out) both;
 }
 
 .lp-hero__status {
@@ -437,7 +441,7 @@ ol {
   font-family: var(--mono);
   font-size: 12.5px;
   line-height: 1.6;
-  animation: lp-rise 500ms 340ms ease-out both;
+  animation: lp-rise 500ms 340ms var(--ease-out) both;
 }
 
 /* the fork — landing signature */
@@ -451,7 +455,7 @@ ol {
   background: color-mix(in srgb, var(--night-2) 86%, transparent);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.4);
   padding: clamp(24px, 4vw, 48px);
-  animation: lp-rise 600ms 420ms ease-out both;
+  animation: lp-rise 600ms 420ms var(--ease-out) both;
 }
 
 .lp-fork__caption {
@@ -633,12 +637,15 @@ ol {
   background: var(--card);
   box-shadow: var(--shadow-1);
   padding: var(--s5);
-  transition: transform 200ms ease, box-shadow 200ms ease;
+  transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
 }
 
-.lp-station:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-2);
+/* Hover lift only where hover is real — touch devices false-positive on tap. */
+@media (hover: hover) and (pointer: fine) {
+  .lp-station:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-2);
+  }
 }
 
 .lp-station__top {
@@ -951,6 +958,18 @@ ol {
   from {
     opacity: 0;
     transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Shared entrance for content that would otherwise teleport in. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -1646,7 +1665,7 @@ ol {
 
 .lane[data-status='done'],
 .lane[data-status='degraded'] {
-  animation: lane-arrive 160ms ease-out both;
+  animation: lane-arrive 160ms var(--ease-out) both;
 }
 
 .lane[data-status='degraded'] {
@@ -1792,6 +1811,7 @@ ol {
   background: var(--card);
   padding: var(--s3);
   font-size: 11.5px;
+  animation: rise-in 180ms var(--ease-out) both;
 }
 
 .contract dl {
@@ -2151,6 +2171,20 @@ ol {
   background: var(--card);
   padding: var(--s3);
   font-size: 12px;
+  animation: rise-in 240ms var(--ease-out) both;
+}
+
+/* Re-run rows cascade in briefly; decorative only, never blocks reading. */
+.rerun:nth-child(2) {
+  animation-delay: 40ms;
+}
+
+.rerun:nth-child(3) {
+  animation-delay: 80ms;
+}
+
+.rerun:nth-child(n + 4) {
+  animation-delay: 120ms;
 }
 
 .class-group[data-class='counterexample'] .rerun,
@@ -2178,6 +2212,11 @@ ol {
 
 .question {
   margin-bottom: var(--s5);
+  animation: rise-in 260ms var(--ease-out) both;
+}
+
+.question:nth-child(2) {
+  animation-delay: 60ms;
 }
 
 .question__index {
@@ -2318,6 +2357,19 @@ ol {
   border-radius: var(--r-lg);
   background: var(--paper);
   padding: var(--s5);
+  /* Publication is the rare, earned moment — it gets the delight budget. */
+  animation: passport-in 420ms var(--ease-out) both;
+}
+
+@keyframes passport-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .passport__head {
@@ -2567,6 +2619,17 @@ ol {
   transform: translateX(-50%);
 }
 
+/* Re-keyed on every step change, so the new instruction rises in instead of
+   teleporting — the one place the whole flow's state changes are narrated. */
+.next-bar__msg {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: var(--s3) var(--s4);
+  align-items: center;
+  animation: rise-in 220ms var(--ease-out) both;
+}
+
 .next-bar__step {
   color: var(--brand-deep);
   font-family: var(--mono);
@@ -2667,25 +2730,25 @@ ol {
 }
 
 .fork-animate .fork__ambiguous::after {
-  animation: bracket-draw 180ms ease-out both;
+  animation: bracket-draw 180ms var(--ease-out) both;
 }
 
 .fork-animate .fork__drop {
   transform-origin: top;
-  animation: rule-draw 120ms 180ms ease-out both;
+  animation: rule-draw 120ms 180ms var(--ease-out) both;
 }
 
 .fork-animate .fork__arm {
   transform-origin: top;
-  animation: rule-draw 220ms 300ms ease-out both;
+  animation: rule-draw 220ms 300ms var(--ease-out) both;
 }
 
 .fork-animate .collision__answer {
-  animation: answer-rise 200ms 350ms ease-out both;
+  animation: answer-rise 200ms 350ms var(--ease-out) both;
 }
 
 .fork-animate .collision__neq {
-  animation: neq-stamp 90ms 550ms ease-out both;
+  animation: neq-stamp 90ms 550ms var(--ease-out) both;
 }
 
 /* ------------------------------------------------------------- responsive */
@@ -2873,8 +2936,9 @@ ol {
     padding: var(--s3) var(--s4);
   }
 
-  .next-bar__text {
+  .next-bar__msg {
     flex-basis: 100%;
+    flex-wrap: wrap;
   }
 }
 

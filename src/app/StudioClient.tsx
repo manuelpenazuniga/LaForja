@@ -51,6 +51,7 @@ import {
   type CheckStatus,
   type DefenseRubric,
   type DisciplineContract,
+  type DisciplineId,
   type DistractorContract,
   type ItemProbeResult,
   type ItemState,
@@ -58,6 +59,7 @@ import {
   type RubricDimensionKey,
   type StateEvent,
 } from '@/core/types';
+import { DisciplineIdSchema, disciplineLabel } from '@/core/disciplines';
 import type { ReRunOutcome } from '@/core/checks';
 import type { Passport } from '@/passport/passport';
 import { LENGTH_HIGH, LENGTH_LOW, OVERLAP_HIGH } from '@/probe/itemProbe';
@@ -82,6 +84,8 @@ export interface StudioItem {
   options: string[];
   correctKey: string;
   authorRationale: string;
+  /** The item's math discipline (demo items carry it; arbitrary drafts may omit it). */
+  discipline?: DisciplineId;
   /** Display-only anchor supplied by the demo seed; arbitrary items omit it. */
   stemSplit?: { before: string; ambiguous: string; after: string };
 }
@@ -180,6 +184,8 @@ export interface SessionInfo {
   pseudonym: string;
   ttlMinutes: number;
   item: StudioItem;
+  /** This visitor's own copy of the demo for each seeded discipline (topic selector). */
+  demoItems: StudioItem[];
 }
 
 interface Notice {
@@ -226,19 +232,23 @@ const ReviewerTypeSchema = z.enum(['ambiguity', 'discipline', 'distractor', 'ite
 const CheckClassSchema = z.enum(['deterministic', 'counterexample', 'semantic']);
 const CheckStatusSchema = z.enum(['proposed', 'accepted', 'rejected', 'abstained', 'hypothesis']);
 
+const DemoItemWireSchema = z.object({
+  itemId: z.string().min(1),
+  versionNumber: z.number().int().positive(),
+  stem: z.string().min(1),
+  options: z.array(z.string().min(1)).min(2),
+  correctKey: z.string().min(1),
+  authorRationale: z.string().min(1),
+  discipline: DisciplineIdSchema,
+});
+
 const SessionWireSchema = z.object({
   pseudonym: z.string().min(1),
   expiresAt: z.string().datetime(),
-  demoItem: z
-    .object({
-      itemId: z.string().min(1),
-      versionNumber: z.number().int().positive(),
-      stem: z.string().min(1),
-      options: z.array(z.string().min(1)).min(2),
-      correctKey: z.string().min(1),
-      authorRationale: z.string().min(1),
-    })
-    .nullable(),
+  demoItem: DemoItemWireSchema.nullable(),
+  // Present since the multi-discipline demo loader; default keeps an older
+  // response (or a test fixture) parsing to an empty list rather than throwing.
+  demoItems: z.array(DemoItemWireSchema).default([]),
 });
 
 const ExecutableReRunSchema = z.object({
@@ -298,7 +308,7 @@ const PassportWireSchema = z.object({
   authorPseudonym: z.string().min(1),
   provenance: z.string().min(1),
   license: z.string().min(1),
-  discipline: z.string().min(1),
+  discipline: DisciplineIdSchema,
   acceptedAttacks: z.array(
     z.object({ reviewerType: z.string(), checkClass: CheckClassSchema, contract: z.unknown() }),
   ),
@@ -399,21 +409,26 @@ const api = {
       body: JSON.stringify({}),
     });
     const parsed = SessionWireSchema.parse(await responseJson(response));
-    if (parsed.demoItem === null) throw new Error('The demo database has not been seeded.');
+    const toStudioItem = (d: z.infer<typeof DemoItemWireSchema>): StudioItem => ({
+      id: d.itemId,
+      versionNumber: d.versionNumber,
+      stem: d.stem,
+      options: d.options,
+      correctKey: d.correctKey,
+      authorRationale: d.authorRationale,
+      discipline: d.discipline,
+    });
+    const demoItems = parsed.demoItems.map(toStudioItem);
+    const item = parsed.demoItem ? toStudioItem(parsed.demoItem) : demoItems[0];
+    if (!item) throw new Error('The demo database has not been seeded.');
     const expiresAt = Date.parse(parsed.expiresAt);
     return {
       pseudonym: parsed.pseudonym,
       ttlMinutes: Number.isFinite(expiresAt)
         ? Math.max(0, Math.round((expiresAt - Date.now()) / 60_000))
         : 0,
-      item: {
-        id: parsed.demoItem.itemId,
-        versionNumber: parsed.demoItem.versionNumber,
-        stem: parsed.demoItem.stem,
-        options: parsed.demoItem.options,
-        correctKey: parsed.demoItem.correctKey,
-        authorRationale: parsed.demoItem.authorRationale,
-      },
+      item,
+      demoItems: demoItems.length > 0 ? demoItems : [item],
     };
   },
 
@@ -893,6 +908,46 @@ export default function StudioClient({
       setBusy(null);
     }
   }, [demoFixture]);
+
+  // Topic selector: switch the loaded challenge to another discipline's demo.
+  // Each discipline's copy is already isolated server-side, so this only swaps
+  // the sheet — but it starts a FRESH attempt, so every run-derived surface is
+  // reset first (a mid-run switch abandons the current attempt by design).
+  const selectDemoDiscipline = useCallback(
+    (discipline: DisciplineId) => {
+      const target = session?.demoItems.find((demo) => demo.discipline === discipline);
+      if (!target || target.id === item?.id) return;
+
+      stateRef.current = 'DRAFT';
+      setState('DRAFT');
+      setTrail([]);
+      setReachedBranches([]);
+      setPreviousVersion(null);
+      setLanes(emptyLaneMap());
+      setChecks([]);
+      setAbstained(0);
+      setReRunByClass(null);
+      setQuestions([]);
+      setAnswers([]);
+      setRubric(null);
+      setPassport(null);
+      setTimeToCounterexampleMs(null);
+      setNotice(null);
+
+      const loaded: StudioItem = {
+        ...target,
+        ...(target.stem === demoFixture.stem && demoFixture.stemSplit
+          ? { stemSplit: demoFixture.stemSplit }
+          : {}),
+      };
+      setItem(loaded);
+      setDraft(draftOf(loaded));
+      toast.success(`${disciplineLabel(discipline)} challenge loaded`, {
+        description: 'Version 1 is on the sheet — find the defect.',
+      });
+    },
+    [session, item, demoFixture],
+  );
 
   const handleSubmitToGauntlet = useCallback(async () => {
     if (!item || !draft || !modelCallsAvailable) return;
@@ -1425,6 +1480,32 @@ export default function StudioClient({
               draft, then send it into review below.
             </p>
 
+            {session && session.demoItems.length > 1 ? (
+              <label className="field field--topic">
+                <span className="field__label">
+                  <span>Topic</span>
+                  <span>switch the demo discipline — starts a fresh attempt</span>
+                </span>
+                <select
+                  className="select"
+                  value={item.discipline ?? ''}
+                  disabled={busy !== null}
+                  onChange={(event) =>
+                    selectDemoDiscipline(DisciplineIdSchema.parse(event.target.value))
+                  }
+                  aria-label="Choose the demo discipline"
+                >
+                  {session.demoItems.map((demo) =>
+                    demo.discipline ? (
+                      <option key={demo.discipline} value={demo.discipline}>
+                        {disciplineLabel(demo.discipline)}
+                      </option>
+                    ) : null,
+                  )}
+                </select>
+              </label>
+            ) : null}
+
             <div className="panel__body form-grid">
               <div>
                 <label className="field">
@@ -1924,9 +2005,12 @@ export default function StudioClient({
 
       {/* Always-visible guidance: where you are and what to do next. */}
       <aside className="next-bar" aria-live="polite" aria-label="Your next move">
-        <span className="next-bar__step">{nextMove.step}</span>
-        <p className="next-bar__text">{nextMove.text}</p>
-        {nextMove.note ? <span className="next-bar__note">{nextMove.note}</span> : null}
+        {/* Keyed by step so a state change re-mounts the message and it rises in. */}
+        <div className="next-bar__msg" key={`${nextMove.step}-${nextMove.text}`}>
+          <span className="next-bar__step">{nextMove.step}</span>
+          <p className="next-bar__text">{nextMove.text}</p>
+          {nextMove.note ? <span className="next-bar__note">{nextMove.note}</span> : null}
+        </div>
         {nextMove.action ? (
           <button
             type="button"
