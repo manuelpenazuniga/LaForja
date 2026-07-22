@@ -24,6 +24,7 @@ import {
   readJsonBody,
 } from '@/demo/isolation';
 import { fromJson, prisma } from '@/db/client';
+import { DisciplineIdSchema } from '@/core/disciplines';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -55,65 +56,89 @@ interface SessionResponse {
   pseudonym: string;
   expiresAt: string;
   created: boolean;
-  /** null only if the database has not been seeded (`npm run db:seed`). */
+  /**
+   * The visitor's own copy of the PROBABILITY demo — kept for back-compat so the
+   * landing "Load demo challenge" works even for a client that ignores the list.
+   * null only if the database has not been seeded (`npm run db:seed`).
+   */
   demoItem: DemoItemPayload | null;
+  /**
+   * The visitor's own copy of the demo for EVERY seeded discipline, one per
+   * discipline, so the studio's topic selector can switch between them. Ordered
+   * to match `DISCIPLINES` (probability first).
+   */
+  demoItems: DemoItemPayload[];
 }
 
 /**
- * Returns this session's own demo item, cloning the seeded template on first
- * use (doc §10 "datos precargados" + per-visitor isolation).
- *
- * The template is the OLDEST `isDemo` item, which is the one written by
- * prisma/seed.ts before any visitor exists. Every later `isDemo` item is a
- * visitor copy, so ordering by createdAt keeps the template unambiguous.
+ * A seeded demo TEMPLATE is the team-authored original written by prisma/seed.ts
+ * (`isTeamAuthored: true`); a visitor's clone (below) never sets that flag, so it
+ * is the unambiguous template signal — robust even after many visitor copies of
+ * the same discipline exist. One template per discipline; `createdAt` order keeps
+ * the list stable (probability was seeded first).
  */
-async function loadDemoItemForSession(sessionId: string): Promise<DemoItemPayload | null> {
-  const owned = await prisma.item.findFirst({
-    where: { sessionId, isDemo: true },
-    orderBy: { createdAt: 'asc' },
-    include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } },
-  });
-  if (owned) {
-    const version = owned.versions[0];
-    return version ? toPayload(owned, version) : null;
-  }
-
-  const template = await prisma.item.findFirst({
-    where: { isDemo: true },
+async function loadDemoTemplates() {
+  return prisma.item.findMany({
+    where: { isDemo: true, isTeamAuthored: true },
     orderBy: { createdAt: 'asc' },
     include: { versions: { orderBy: { versionNumber: 'asc' }, take: 1 } },
   });
-  const templateVersion = template?.versions[0];
-  if (!template || !templateVersion) return null;
+}
 
-  // Clone as a fresh DRAFT at version 1: the visitor repairs their own copy.
-  const item = await prisma.item.create({
-    data: {
-      sessionId,
-      discipline: template.discipline,
-      provenance: template.provenance,
-      license: template.license,
-      isDemo: true,
-      state: 'DRAFT',
-    },
-  });
-  const version = await prisma.itemVersion.create({
-    data: {
-      itemId: item.id,
-      versionNumber: 1,
-      stem: templateVersion.stem,
-      optionsJson: templateVersion.optionsJson,
-      correctKey: templateVersion.correctKey,
-      authorRationale: templateVersion.authorRationale,
-      immutable: false,
-    },
-  });
-  const linked = await prisma.item.update({
-    where: { id: item.id },
-    data: { currentVersionId: version.id },
-  });
+/**
+ * Returns this session's own copy of each seeded discipline demo, cloning the
+ * template on first use (doc §10 "datos precargados" + per-visitor isolation).
+ * A visitor repairs their OWN copy, so one judge cannot break another's demo.
+ */
+async function loadDemoItemsForSession(sessionId: string): Promise<DemoItemPayload[]> {
+  const templates = await loadDemoTemplates();
+  const payloads: DemoItemPayload[] = [];
 
-  return toPayload(linked, version);
+  for (const template of templates) {
+    const templateVersion = template.versions[0];
+    if (!templateVersion) continue;
+
+    const owned = await prisma.item.findFirst({
+      where: { sessionId, isDemo: true, discipline: template.discipline },
+      orderBy: { createdAt: 'asc' },
+      include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } },
+    });
+    if (owned) {
+      const ownedVersion = owned.versions[0];
+      if (ownedVersion) payloads.push(toPayload(owned, ownedVersion));
+      continue;
+    }
+
+    // Clone as a fresh DRAFT at version 1: the visitor repairs their own copy.
+    const item = await prisma.item.create({
+      data: {
+        sessionId,
+        discipline: template.discipline,
+        provenance: template.provenance,
+        license: template.license,
+        isDemo: true,
+        state: 'DRAFT',
+      },
+    });
+    const version = await prisma.itemVersion.create({
+      data: {
+        itemId: item.id,
+        versionNumber: 1,
+        stem: templateVersion.stem,
+        optionsJson: templateVersion.optionsJson,
+        correctKey: templateVersion.correctKey,
+        authorRationale: templateVersion.authorRationale,
+        immutable: false,
+      },
+    });
+    const linked = await prisma.item.update({
+      where: { id: item.id },
+      data: { currentVersionId: version.id },
+    });
+    payloads.push(toPayload(linked, version));
+  }
+
+  return payloads;
 }
 
 function toPayload(
@@ -133,7 +158,9 @@ function toPayload(
     versionId: version.id,
     versionNumber: version.versionNumber,
     state: item.state,
-    discipline: item.discipline,
+    // Validate at the DB→domain boundary: a demo row with an unknown discipline
+    // is a seeding bug, surfaced here rather than shipped to the client.
+    discipline: DisciplineIdSchema.parse(item.discipline),
     provenance: item.provenance,
     license: item.license,
     stem: version.stem,
@@ -159,12 +186,15 @@ export async function POST(req: Request): Promise<Response> {
 
     assertRateLimit(resolution.session.id, { config });
 
+    const demoItems = await loadDemoItemsForSession(resolution.session.id);
     const payload: SessionResponse = {
       sessionId: resolution.session.id,
       pseudonym: resolution.session.pseudonym,
       expiresAt: resolution.session.expiresAt.toISOString(),
       created: resolution.created,
-      demoItem: await loadDemoItemForSession(resolution.session.id),
+      demoItem:
+        demoItems.find((item) => item.discipline === 'probability') ?? demoItems[0] ?? null,
+      demoItems,
     };
     return jsonResponse(payload, 200, cookie);
   } catch (err) {

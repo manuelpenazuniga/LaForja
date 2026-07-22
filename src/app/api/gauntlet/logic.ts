@@ -63,7 +63,8 @@ import {
   type AdjudicationResult,
 } from '@/reviewers/adjudication';
 import { AMBIGUITY_PROMPT_VERSION, AMBIGUITY_SYSTEM } from '@/reviewers/ambiguity';
-import { DISCIPLINE_PROMPT_VERSION, DISCIPLINE_SYSTEM } from '@/reviewers/discipline';
+import { DISCIPLINE_PROMPT_VERSION, disciplineSystem } from '@/reviewers/discipline';
+import { DisciplineIdSchema } from '@/core/disciplines';
 import { reviewDistractorsWithTelemetry } from '@/reviewers/distractors';
 import { AmbiguitySchema, DisciplineSchema } from '@/reviewers/schemas';
 import { callModel, type ModelCallArgs, type ModelCallResult } from '@/openai/client';
@@ -418,7 +419,9 @@ async function streamingRunGauntlet(args: StreamingGauntletArgs): Promise<Orches
       'discipline',
       (itemText, model) => callModel({
         model,
-        system: DISCIPLINE_SYSTEM,
+        // Per-item DOMAIN: a geometry item is reviewed under "DOMAIN: geometry
+        // only", never the probability default.
+        system: disciplineSystem(args.item.discipline),
         delimitedItem: itemText,
         schema: DisciplineSchema,
         promptVersion: DISCIPLINE_PROMPT_VERSION,
@@ -782,6 +785,9 @@ export async function handleGauntlet(
         options: fromJson<string[]>(version.optionsJson),
         correctKey: version.correctKey,
         authorRationale: version.authorRationale,
+        // Trusted author metadata from the DB row: selects the bounded solver and
+        // the discipline reviewer's DOMAIN. Validated here at the DB→domain edge.
+        discipline: DisciplineIdSchema.parse(item.discipline),
       },
     };
 

@@ -635,6 +635,7 @@ async function evaluateItem(
       options: item.options,
       correctKey: item.correct_key,
       authorRationale: item.author_rationale,
+      discipline: item.discipline,
     },
     models.reviewerModel,
     config,

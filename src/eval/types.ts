@@ -8,6 +8,7 @@
  * OWNER: Claude (structure + fixtures format). The runner is Codex.
  */
 import { z } from 'zod';
+import { DisciplineIdSchema } from '../core/disciplines';
 
 export const SMOKE_CATEGORIES = [
   'clean', // 4 items: no intended defect (measures FALSE POSITIVES)
@@ -48,7 +49,10 @@ const SmokeItemBaseSchema = z.object({
   author_labeled: z.literal(true), // declared, always (doc §8)
   split: z.enum(['dev', 'holdout']), // dev items are NOT reported as evaluation
   category: z.enum(SMOKE_CATEGORIES),
-  discipline: z.literal('probability'),
+  // The 16 shipped smoke items are all `probability`; the schema now accepts any
+  // discipline so a labeled statistics/geometry/triangle set can be added later
+  // without a schema change (the set itself is NOT extended in this build).
+  discipline: DisciplineIdSchema,
   stem: NonBlank,
   options: z.array(NonBlank).min(3),
   correct_key: NonBlank, // the key the AUTHOR marked (may be wrong for factual_error)
