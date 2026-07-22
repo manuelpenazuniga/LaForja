@@ -53,7 +53,7 @@ export default function AboutPage() {
       </header>
 
       <main className="ab-main">
-        <p className="lp-eyebrow">About the project</p>
+        <p className="lp-eyebrow">A letter from the team</p>
         <h1 className="ab-title">
           In a world full of intelligence,
           <br />
@@ -63,7 +63,7 @@ export default function AboutPage() {
         {/* ------------------------------------------------------ the spark */}
         <section className="ab-section">
           <h2>The spark</h2>
-          <p>
+          <p className="ab-dropcap">
             I have spent more than ten years preparing students for a national
             university entrance exam — first as a math-olympiad kid turned tutor,
             then as an engineer building an edtech platform for that exam. That
@@ -198,6 +198,10 @@ export default function AboutPage() {
             is astonishingly good at structuring it when you point it in the
             right direction.
           </blockquote>
+          <p className="ab-sign">
+            — The LA FORJA team
+            <span>OpenAI Build Week · Education track</span>
+          </p>
         </section>
 
         {/* --------------------------------------------------- the boundary */}
@@ -205,9 +209,11 @@ export default function AboutPage() {
           <h2>Stated plainly: what runs today</h2>
           <p>
             The whole pipeline is implemented and pinned by offline tests against
-            a fake model transport. No runtime API key has been available to this
-            build, so no model-backed stage is presented as having run live, and
-            the eval directory holds no artifact. This is the exact boundary.
+            a fake model transport. Model-backed stages run live only where a
+            server API key is configured, and the studio labels their
+            availability on every surface. The evaluation harness has published
+            no artifacts yet — no number anywhere came from a run that did not
+            happen. This is the exact boundary.
           </p>
           <div className="lp-status">
             <div className="lp-status__col">

@@ -628,21 +628,33 @@ ol {
   color: var(--smoke-soft);
 }
 
-/* the story band */
+/* the story band — editorial, not a list */
 
 .lp-story {
-  max-width: 68ch;
+  max-width: 66ch;
 }
 
 .lp-story p {
   margin-top: var(--s5);
-  color: var(--ink-soft);
-  font-size: 17px;
-  line-height: 1.7;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 18px;
+  line-height: 1.75;
 }
 
 .lp-story p strong {
-  color: var(--ink);
+  color: var(--brand-deep);
+  font-weight: 700;
+}
+
+.lp-story__open::first-letter {
+  float: left;
+  margin: 6px 10px 0 0;
+  color: var(--brand-deep);
+  font-family: var(--display);
+  font-size: 58px;
+  font-weight: 800;
+  line-height: 0.8;
 }
 
 .lp-pull {
@@ -949,47 +961,30 @@ ol {
 
 /* principles */
 
-.lp-principles {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--s4);
-  margin-top: var(--s7);
+/* the rules of the house — one flowing paragraph, icons inline */
+
+.lp-rules {
+  max-width: 72ch;
 }
 
-.lp-principle {
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--card);
-  padding: var(--s5);
+.lp-rules p {
+  margin-top: var(--s5);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 18.5px;
+  line-height: 1.85;
 }
 
-.lp-principle__icon {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--r-md);
-  background: var(--gold-soft);
+.lp-rules strong {
   color: var(--gold);
-}
-
-.lp-principle__icon svg {
-  width: 24px;
-  height: 24px;
-}
-
-.lp-principle h3 {
-  margin-top: var(--s4);
-  font-family: var(--display);
-  font-size: 17.5px;
   font-weight: 700;
 }
 
-.lp-principle p {
-  margin-top: var(--s2);
-  color: var(--ink-soft);
-  font-size: 14.5px;
-  line-height: 1.6;
+.lp-rules strong svg {
+  width: 17px;
+  height: 17px;
+  margin-right: 3px;
+  vertical-align: -2.5px;
 }
 
 /* honesty strip */
@@ -1079,16 +1074,46 @@ ol {
   letter-spacing: -0.01em;
 }
 
+/* The letter reads like a letter: serif body, generous leading. */
 .ab-section p {
-  max-width: 68ch;
+  max-width: 66ch;
   margin-top: var(--s5);
-  color: var(--ink-soft);
-  font-size: 17px;
-  line-height: 1.75;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 18.5px;
+  line-height: 1.8;
 }
 
 .ab-section p strong {
-  color: var(--ink);
+  color: var(--brand-deep);
+}
+
+.ab-dropcap::first-letter {
+  float: left;
+  margin: 7px 11px 0 0;
+  color: var(--gold);
+  font-family: var(--display);
+  font-size: 62px;
+  font-weight: 800;
+  line-height: 0.8;
+}
+
+.ab-section p.ab-sign {
+  margin-top: var(--s6);
+  font-family: var(--display);
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.ab-sign span {
+  display: block;
+  margin-top: var(--s1);
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .ab-section p em {
@@ -1231,9 +1256,9 @@ ol {
   max-width: 52ch;
   margin-top: var(--s3);
   font-family: var(--display);
-  font-size: clamp(20px, 2.6vw, 26px);
+  font-size: clamp(18px, 2.2vw, 22px);
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 1.3;
 }
 
 .masthead__descriptor {
@@ -1568,17 +1593,74 @@ ol {
   align-items: center;
 }
 
+/* The step number mirrors the landing infographic: a numbered circle whose
+   colour tracks the step's phase — indigo now, green done, muted later. */
 .panel__step {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--r-sm);
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
   background: var(--brand-soft);
   color: var(--brand-deep);
   font-family: var(--display);
-  font-size: 16px;
+  font-size: 16.5px;
   font-weight: 800;
+  transition: background-color 250ms ease, color 250ms ease, box-shadow 250ms ease;
+}
+
+.panel[data-step='now'] .panel__step {
+  background: linear-gradient(180deg, #5b54f0, var(--brand-strong));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 4px 14px rgba(67, 56, 202, 0.3);
+  color: #fff;
+}
+
+.panel[data-step='done'] .panel__step {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+/* Plain-words explainer, collapsed by default so the sheet stays airy. */
+.panel__more {
+  max-width: 70ch;
+  margin-top: var(--s3);
+}
+
+.panel__more summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 44px;
+  color: var(--brand-deep);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.panel__more summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel__more summary::before {
+  content: '+';
+  font-size: 15px;
+  line-height: 1;
+}
+
+.panel__more[open] summary::before {
+  content: '−';
+}
+
+.panel__more p {
+  margin-top: var(--s2);
+  color: var(--ink-soft);
+  font-size: 14.5px;
+  line-height: 1.65;
+  animation: rise-in 200ms var(--ease-out) both;
 }
 
 .panel__title {
@@ -1705,39 +1787,53 @@ ol {
 
 .flow-arrow {
   display: grid;
-  gap: var(--s1);
+  gap: var(--s2);
   justify-items: center;
-  margin-top: var(--s5);
+  margin-top: var(--s6);
   color: var(--ink-soft);
   transition: color 250ms ease;
 }
 
 .flow-arrow__line {
   width: 2px;
-  height: 22px;
+  height: 26px;
   border-radius: 1px;
   background: currentColor;
-  opacity: 0.45;
+  opacity: 0.4;
 }
 
 .flow-arrow__label {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  padding: 4px 14px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 11.5px;
   letter-spacing: 0.06em;
+  transition: border-color 250ms ease, background-color 250ms ease;
+}
+
+.flow-arrow__label b {
+  font-weight: 700;
 }
 
 .flow-arrow__head {
   width: 9px;
   height: 9px;
-  margin-top: -3px;
+  margin-top: -2px;
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
-  opacity: 0.45;
+  opacity: 0.4;
   transform: rotate(45deg);
 }
 
 .flow-arrow[data-live='true'] {
   color: var(--brand-deep);
+}
+
+.flow-arrow[data-live='true'] .flow-arrow__label {
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
 }
 
 .flow-arrow[data-live='true'] .flow-arrow__line,
@@ -2842,24 +2938,23 @@ ol {
 }
 
 .roadmap__list {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--s3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
   margin-top: var(--s4);
   list-style: none;
 }
 
 .roadmap__item {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--s3);
-  min-height: 52px;
+  display: inline-flex;
+  gap: var(--s2);
   align-items: center;
-  border: 1.5px dashed var(--line-strong);
-  border-radius: var(--r-md);
+  border: 1px dashed var(--line-strong);
+  border-radius: 999px;
   background: var(--hatch);
-  padding: var(--s3) var(--s4);
+  padding: var(--s1) var(--s3);
   color: var(--ink-soft);
+  font-size: 13.5px;
   pointer-events: none;
 }
 
@@ -3193,10 +3288,6 @@ ol {
     grid-template-columns: 1fr;
   }
 
-  .lp-principles {
-    grid-template-columns: 1fr 1fr;
-  }
-
   .masthead,
   .onboard,
   .form-grid,
@@ -3241,7 +3332,6 @@ ol {
   .lanes,
   .readings,
   .counterexample__audit,
-  .roadmap__list,
   .colophon {
     grid-template-columns: 1fr;
   }
@@ -3330,10 +3420,6 @@ ol {
 
   .lp-fork__split {
     display: none;
-  }
-
-  .lp-principles {
-    grid-template-columns: 1fr;
   }
 
   .lp-flow__step {

@@ -1460,6 +1460,8 @@ export default function StudioClient({
 
       {item && draft ? (
         <>
+          <StepArrow step="01" label="the sheet starts" live={panelPhase.item === 'now'} />
+
           {/* ------------------------------------------------ 01 item + form */}
           <section className="panel" id="item" data-step={panelPhase.item}>
             <div className="panel__head">
@@ -1474,11 +1476,16 @@ export default function StudioClient({
               </span>
             </div>
             <p className="panel__lede">
-              This is the problem on trial: its question (the stem), four options, the
-              key the author marked as correct, and the author&rsquo;s reasoning. Somewhere
-              in here hides a defect — read it closely, edit anything while it is a
-              draft, then send it into review below.
+              One defect is hiding in plain sight. Read closely — then send the item
+              into review.
             </p>
+            <StepExplainer>
+              This is the problem on trial: its question (the stem), four options,
+              the key the author marked as correct, and the author&rsquo;s reasoning.
+              Everything is editable while the item is a draft. When you think you
+              see the flaw — or even if you don&rsquo;t — press &ldquo;Run the
+              gauntlet&rdquo; and let the reviewers hunt for it.
+            </StepExplainer>
 
             {session && session.demoItems.length > 1 ? (
               <div className="topic-picker">
@@ -1606,7 +1613,7 @@ export default function StudioClient({
             </div>
           </section>
 
-          <StepArrow label="run the gauntlet" live={panelPhase.gauntlet === 'now'} />
+          <StepArrow step="02" label="run the gauntlet" live={panelPhase.gauntlet === 'now'} />
 
           {/* ---------------------------------------------------- 02 gauntlet */}
           <section className="panel" id="gauntlet" data-step={panelPhase.gauntlet}>
@@ -1622,11 +1629,15 @@ export default function StudioClient({
               </span>
             </div>
             <p className="panel__lede">
-              The review stage: four independent examiners attack your item at the same
-              time — three AI reviewers and one fixed calculation that needs no AI. Each
-              must attach evidence to anything it claims; each card below shows what its
-              examiner hunts for and settles on its own as results arrive.
+              Four examiners attack the item at once. Every claim needs evidence.
             </p>
+            <StepExplainer>
+              Three AI reviewers hunt for ambiguity, mathematical errors and weak
+              wrong-options, while a fixed calculation that needs no AI checks for
+              superficial answer cues. They run at the same time and settle
+              separately — a slow or failed reviewer never blocks the others — and
+              nothing counts as a defect unless it arrives with evidence attached.
+            </StepExplainer>
 
             <div className="panel__body lanes">
               {LANE_SPECS.map((spec) => (
@@ -1642,6 +1653,7 @@ export default function StudioClient({
 
           {/* -------------------------------------------- 03 counterexample */}
           <StepArrow
+            step="03"
             label="a finding is accepted"
             live={panelPhase.counterexample === 'now'}
           />
@@ -1665,12 +1677,16 @@ export default function StudioClient({
               </span>
             </div>
             <p className="panel__lede">
-              The strongest kind of finding a reviewer can land: not an opinion but a
-              demonstration that the item is broken — two honest readings of your stem
-              that lead to two different answers, shown so you can re-execute them
-              yourself. When one is accepted here, the item is officially challenged and
-              the repair below unlocks.
+              Not an opinion — a demonstration you can re-run yourself.
             </p>
+            <StepExplainer>
+              The strongest finding a reviewer can land is a counterexample: two
+              honest readings of your stem that lead to two different answers,
+              laid out so you can re-execute the construction yourself. Reviewer
+              claims also pass a separate adjudication step before landing here —
+              when one is accepted, the item is officially challenged and the
+              repair below unlocks.
+            </StepExplainer>
 
             <div className="panel__body">
               {counterexample ? (
@@ -1707,7 +1723,7 @@ export default function StudioClient({
             </div>
           </section>
 
-          <StepArrow label="the fracture forces a fix" live={panelPhase.repair === 'now'} />
+          <StepArrow step="04" label="the fracture forces a fix" live={panelPhase.repair === 'now'} />
 
           {/* ------------------------------------------------------ 04 repair */}
           <section className="panel" id="repair" data-step={panelPhase.repair}>
@@ -1725,10 +1741,14 @@ export default function StudioClient({
               </span>
             </div>
             <p className="panel__lede">
-              Your move: rewrite the stem so only one reading survives. Submitting never
-              overwrites version 1 — it creates version 2 and immediately re-runs every
-              recorded check against it. The diff below shows exactly what you changed.
+              Rewrite the stem so only one reading survives. Version 1 stays on record.
             </p>
+            <StepExplainer>
+              A repair never overwrites: submitting creates version 2 while version
+              1 stays frozen, and every recorded check immediately re-runs against
+              your fix in the same request. The diff below shows exactly what you
+              changed, word by word.
+            </StepExplainer>
 
             <div className="panel__body">
               <label className="field">
@@ -1782,6 +1802,7 @@ export default function StudioClient({
           </section>
 
           <StepArrow
+            step="05"
             label="one request re-runs everything"
             live={panelPhase.rerun === 'now'}
           />
@@ -1800,9 +1821,14 @@ export default function StudioClient({
               </span>
             </div>
             <p className="panel__lede">
-              Did your fix hold? Every check the item ever faced runs again on the new
-              version, grouped by the promise each class keeps.
+              Did your fix hold? Every recorded check runs again on the new version.
             </p>
+            <StepExplainer>
+              The results are grouped by the promise each class of check keeps:
+              deterministic checks can never regress, counterexamples are
+              re-executed and block publication while they still hold, and
+              semantic judgments are re-judged rather than assumed.
+            </StepExplainer>
             <p className="guarantee">{GUARANTEE_TEXT}</p>
 
             <div className="panel__body classes">
@@ -1849,6 +1875,7 @@ export default function StudioClient({
           </section>
 
           <StepArrow
+            step="06"
             label="a clean history opens the defense"
             live={panelPhase.defense === 'now'}
           />
@@ -1867,12 +1894,15 @@ export default function StudioClient({
               </span>
             </div>
             <p className="panel__lede">
-              Fixing it is not enough — you also show you understand why it was broken.
-              Two short written questions, scored against the three-part rubric on the
-              right; every score comes with the quoted evidence it was based on. If the
-              evaluator itself fails, the result is inconclusive — a retry, never an
-              automatic reject. Question generation and scoring need the server API key.
+              Fixing it is not enough — show you understand why it was broken.
             </p>
+            <StepExplainer>
+              Two short written questions, scored against the three-part rubric on
+              this panel; every score carries the quoted evidence it was based on.
+              If the evaluator itself fails, the result is inconclusive — a retry,
+              never an automatic reject. Question generation and scoring run on the
+              server&rsquo;s configured model.
+            </StepExplainer>
 
             <div className="panel__body viva">
               <div>
@@ -1944,6 +1974,7 @@ export default function StudioClient({
           </section>
 
           <StepArrow
+            step="07"
             label="a passed defense publishes"
             live={panelPhase.passport === 'now'}
           />
@@ -1962,9 +1993,14 @@ export default function StudioClient({
               </span>
             </div>
             <p className="panel__lede">
-              The item&rsquo;s diploma: every attack it survived, every re-run, the defense
-              scores and every version, assembled at publication and frozen.
+              The item&rsquo;s diploma — the whole fight, frozen on the record.
             </p>
+            <StepExplainer>
+              Publishing assembles an auditable trace: provenance and license,
+              every accepted attack with its evidence, the history re-run grouped
+              by class, the discipline verdict with its citation or marked
+              unverified, the defense rubric, and every version with its diff.
+            </StepExplainer>
 
             <div className="panel__body">
               {passport ? (
@@ -2062,13 +2098,25 @@ export default function StudioClient({
  * The arrow between two sheet panels: it names the event that moves the item
  * from one step to the next, and lights up when that move is the current one.
  */
-function StepArrow({ label, live }: { label: string; live: boolean }) {
+function StepArrow({ step, label, live }: { step: string; label: string; live: boolean }) {
   return (
     <div className="flow-arrow" data-live={live ? 'true' : 'false'} aria-hidden="true">
       <span className="flow-arrow__line" />
-      <span className="flow-arrow__label">{label}</span>
+      <span className="flow-arrow__label">
+        {label} <b>→ {step}</b>
+      </span>
       <span className="flow-arrow__head" />
     </div>
+  );
+}
+
+/** One-line lede + a collapsible plain-words explanation for a sheet panel. */
+function StepExplainer({ children }: { children: React.ReactNode }) {
+  return (
+    <details className="panel__more">
+      <summary>What happens in this step?</summary>
+      <p>{children}</p>
+    </details>
   );
 }
 

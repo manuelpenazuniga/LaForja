@@ -151,9 +151,8 @@ export default function LandingPage() {
         </div>
         <p className="lp-hero__status">
           The studio, the seeded challenges, versioning and passports run today.
-          The reviewer stages are implemented and verified offline; their live
-          model calls are gated on a server API key, and the studio labels their
-          availability instead of faking results.
+          Reviewer stages run live wherever a server API key is configured, and
+          the studio shows that availability honestly instead of faking results.
         </p>
 
         {/* The signature: the real demo defect, shown as the construction it is. */}
@@ -196,28 +195,38 @@ export default function LandingPage() {
       <section className="lp-section" id="why">
         <div className="lp-story">
           <h2 className="lp-h2">Why a forge?</h2>
-          <p>
-            Every AI tutor on the market optimizes the same thing: getting you to
-            the answer, faster. And it works — you never get stuck any more. But
-            the same shortcut that unblocks you also lets you step around the
-            struggle that builds real understanding. You reach the answer without
-            ever owning the reasoning.
+          <p className="lp-story__open">
+            When AI arrived in classrooms, something wonderful happened: students
+            stopped getting stuck. The question that used to block you until the
+            next class now gets unblocked in thirty seconds. But something
+            quieter happened too. The same shortcut that unblocks you also lets
+            you step around the problems that demand real effort — the slow
+            maturation of a concept, the uncomfortable stretch where abstraction
+            is built. You reach the answer without ever owning the reasoning.
           </p>
           <blockquote className="lp-pull">
             If students use AI as an answer machine, they will not learn. The
             tool is not the problem. The direction of the interaction is.
           </blockquote>
           <p>
-            LA FORJA flips that direction. Here the AI never answers for you: you
-            author the problem, the AI attacks it with evidence, and the repair
-            and the defense are yours. Writing a good question demands deeper
-            understanding than answering one — you must master the content,
-            anticipate how others go wrong, and design every wrong option around
-            a mistake a real student would make. That is builder thinking,
-            applied to mathematics.
+            And there is a harder question underneath, one every student deserves
+            to hear: you are not graduating into the world you were prepared for.
+            You are graduating into a world where intelligence is suddenly
+            everywhere. So who becomes more valuable when everyone has access to
+            intelligence? The person who can <strong>build</strong> — and defend
+            what they built under pressure.
+          </p>
+          <p>
+            That is why this studio is a forge and not a tutor. Here the AI never
+            answers for you: <strong>you</strong> author the problem, the AI
+            attacks it with evidence, and the repair and the defense are yours
+            alone. Writing one good question demands deeper understanding than
+            answering twenty — you must master the content, anticipate how others
+            go wrong, and design every wrong option around a mistake a real
+            student would make. Builder thinking, applied to mathematics.
           </p>
           <p className="lp-story__cta">
-            <Link href="/about">Read why we built this →</Link>
+            <Link href="/about">Read the whole story →</Link>
           </p>
         </div>
       </section>
@@ -254,7 +263,7 @@ export default function LandingPage() {
                         : 'lp-chip lp-chip--gated'
                     }
                   >
-                    {station.status === 'today' ? 'runs today' : 'needs an API key'}
+                    {station.status === 'today' ? 'always on' : 'live with an API key'}
                   </span>
                 </div>
                 <h3 className="lp-flow__title">{station.title}</h3>
@@ -316,10 +325,11 @@ export default function LandingPage() {
           <div>
             <h2 className="lp-h2">Stated plainly</h2>
             <p className="lp-section__lede">
-              The whole pipeline is implemented and pinned by offline tests. No
-              runtime API key has been available to this build, so no model-backed
-              stage is presented as having run live, and the eval directory holds
-              no artifact.
+              The whole pipeline is implemented and pinned by offline tests.
+              Model-backed stages run live only where a server API key is
+              configured — the studio labels their availability on every surface —
+              and the evaluation harness has published no artifacts yet. No number
+              anywhere came from a run that did not happen.
             </p>
           </div>
           <Link className="lp-btn lp-btn--outline" href="/about#boundary">
@@ -328,45 +338,27 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ------------------------------------------------------- principles */}
+      {/* --------------------------------------------- the rules of the house */}
       <section className="lp-section lp-section--tint">
-        <div className="lp-section__head">
-          <h2 className="lp-h2">Built on four hard rules</h2>
-        </div>
-        <div className="lp-principles">
-          <div className="lp-principle">
-            <span className="lp-principle__icon"><ShieldIcon /></span>
-            <h3>Zero PII</h3>
-            <p>
-              Authors appear as random pseudonyms. No name, email, school, city or
-              age field exists in any schema, form or column.
-            </p>
-          </div>
-          <div className="lp-principle">
-            <span className="lp-principle__icon"><TagIcon /></span>
-            <h3>Team-authored, CC-BY</h3>
-            <p>
-              Every item is an original authored by the team and licensed CC-BY.
-              No third-party exam content of any kind.
-            </p>
-          </div>
-          <div className="lp-principle">
-            <span className="lp-principle__icon"><CompassIcon /></span>
-            <h3>Exam-agnostic</h3>
-            <p>
-              Designed against the constraints of a real high-stakes exam, built to
-              be exam-agnostic. The demo topics are probability, statistics and
-              geometry.
-            </p>
-          </div>
-          <div className="lp-principle">
-            <span className="lp-principle__icon"><BracketsIcon /></span>
-            <h3>Untrusted input</h3>
-            <p>
-              Item text is delimited in every prompt. Reviewers get no write tools
-              and no open network; input is capped and rate-limited.
-            </p>
-          </div>
+        <div className="lp-rules">
+          <h2 className="lp-h2">The rules of the house</h2>
+          <p>
+            The forge keeps a few promises it will not trade away.{' '}
+            <strong><ShieldIcon /> Nobody is on file:</strong> authors appear as
+            random pseudonyms, and no name, email, school, city or age field
+            exists in any schema, form or column — not optional, absent.{' '}
+            <strong><TagIcon /> Everything is ours to give:</strong> every item is
+            a team-authored original released under CC-BY, with no third-party
+            exam content of any kind.{' '}
+            <strong><CompassIcon /> No exam owns the mechanism:</strong> it was
+            designed against the constraints of a real high-stakes exam — that is
+            where the assessment expertise comes from — and built to be
+            exam-agnostic; today&rsquo;s arenas are probability, statistics and
+            geometry.{' '}
+            <strong><BracketsIcon /> Your text is handled like evidence:</strong>{' '}
+            item text is delimited in every prompt, reviewers get no tools and no
+            open network, and input is capped and rate-limited.
+          </p>
         </div>
       </section>
 
