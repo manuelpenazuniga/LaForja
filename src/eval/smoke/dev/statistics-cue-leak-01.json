@@ -1,0 +1,24 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
+  "id": "statistics-cue-leak-01",
+  "author_labeled": true,
+  "split": "dev",
+  "category": "cue_leak",
+  "discipline": "statistics",
+  "stem": "The daily high temperatures (in degrees Celsius) recorded over six days were 12, 47, 33, 8, 51, 29. What is the range of this dataset?",
+  "options": [
+    "59",
+    "43 — the difference obtained by subtracting the minimum value (8) from the maximum value (51) in the dataset",
+    "51",
+    "20"
+  ],
+  "correct_key": "B",
+  "author_rationale": "The range is the largest value minus the smallest: 51 - 8 = 43, which is option B. The underlying computation is correct and unambiguous.",
+  "intended_defect": {
+    "type": "cue_leak",
+    "description": "The correct option (B) is written as a long explanatory sentence while the three distractors are bare numbers. The conspicuous length of the keyed option leaks the answer to a test-taker who never computes the range.",
+    "expected_finding": "The reviewer should flag that option B is far longer and more detailed than the distractors, a length cue that identifies the key independently of the mathematics, even though 43 is in fact the correct range."
+  },
+  "source": null
+}

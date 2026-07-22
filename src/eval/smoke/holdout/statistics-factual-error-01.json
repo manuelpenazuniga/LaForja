@@ -1,0 +1,26 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
+  "id": "statistics-factual-error-01",
+  "author_labeled": true,
+  "split": "holdout",
+  "category": "factual_error",
+  "discipline": "statistics",
+  "stem": "The five values 2, 4, 6, 8, 10 constitute an entire small population. What is the population variance of this population?",
+  "options": ["8", "10", "6", "40"],
+  "correct_key": "B",
+  "author_rationale": "The author computed the sum of squared deviations from the mean (mean = 6; deviations squared: 16, 4, 0, 4, 16; total 40) and then divided by n - 1 = 4, obtaining 40 / 4 = 10. That divisor is wrong for a full population.",
+  "intended_defect": {
+    "type": "factual_error",
+    "description": "The stem states the five values are an entire population, so the population variance divides the sum of squared deviations by n, not by n - 1. The author applied Bessel's correction (divide by n - 1), which is the SAMPLE variance formula. The sum of squared deviations is 40, so the marked answer 40 / 4 = 10 is the sample variance, while the population variance is 40 / 5 = 8.",
+    "expected_finding": "The bounded solver computes population variance = (n*Q - S^2) / n^2 with S = 30 and Q = 220 over n = 5: (5*220 - 900) / 25 = 200 / 25 = 8, contradicting the marked key of 10. The gap is exactly the n vs (n - 1) divisor.",
+    "true_answer": "8"
+  },
+  "source": {
+    "source_id": "forja-corpus/population-vs-sample-variance",
+    "version_date": "2025-07-20",
+    "license": "CC-BY-4.0",
+    "excerpt": "Population variance divides the sum of squared deviations from the mean by the number of data points n. Sample variance instead divides by n - 1 (Bessel's correction) to correct the bias of estimating a population parameter from a sample. The two differ by the factor n / (n - 1) and must not be interchanged.",
+    "relevance": "Names the exact step the author got wrong: dividing by n - 1 = 4 when the stem declares the data to be a full population, which requires dividing by n = 5."
+  }
+}

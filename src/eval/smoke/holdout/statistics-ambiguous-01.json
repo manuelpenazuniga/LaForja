@@ -1,0 +1,19 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
+  "id": "statistics-ambiguous-01",
+  "author_labeled": true,
+  "split": "holdout",
+  "category": "ambiguous",
+  "discipline": "statistics",
+  "stem": "For the dataset 1, 3, 4, 6, 9, 10, 15, what is the interquartile range (IQR)?",
+  "options": ["6", "7", "9", "14"],
+  "correct_key": "B",
+  "author_rationale": "The author used the exclusive method: the median 6 is excluded from both halves, so Q1 = median(1, 3, 4) = 3 and Q3 = median(9, 10, 15) = 10, giving IQR = 10 - 3 = 7.",
+  "intended_defect": {
+    "type": "ambiguity",
+    "description": "With an odd-length dataset the stem does not state which quartile convention to use, and the two standard conventions give different answers. The exclusive (Tukey) method drops the overall median from each half; the inclusive (Moore) method keeps it in each half.",
+    "expected_finding": "Reading A = exclusive method: Q1 = 3, Q3 = 10, IQR = 7. Reading B = inclusive method: Q1 = median(1, 3, 4, 6) = 3.5, Q3 = median(6, 9, 10, 15) = 9.5, IQR = 6. The two answers (7 and 6) differ and both appear among the options, so the ambiguity attack is valid."
+  },
+  "source": null
+}

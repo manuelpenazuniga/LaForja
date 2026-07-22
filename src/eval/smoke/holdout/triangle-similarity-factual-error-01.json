@@ -1,0 +1,26 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
+  "id": "triangle-similarity-factual-error-01",
+  "author_labeled": true,
+  "split": "holdout",
+  "category": "factual_error",
+  "discipline": "triangle-similarity",
+  "stem": "Triangle ABC is similar to triangle DEF, with A corresponding to D, B to E, and C to F. Side AB = 8 cm corresponds to side DE = 20 cm. If BC = 14 cm, what is the length of EF?",
+  "options": ["26 cm", "35 cm", "32 cm", "40 cm"],
+  "correct_key": "A",
+  "author_rationale": "The author reasoned additively: DE is 20 - 8 = 12 cm longer than AB, so EF must be 12 cm longer than BC, giving 14 + 12 = 26 cm. This is WRONG: similar triangles scale by a constant multiplicative factor, not by a constant additive difference.",
+  "intended_defect": {
+    "type": "factual_error",
+    "description": "The marked key (26 cm) applies additive scaling — adding the difference DE − AB = 12 to BC — instead of multiplying by the scale factor. Similarity preserves ratios, not differences.",
+    "expected_finding": "The bounded solver multiplies by the scale factor k = DE/AB = 20/8: EF = BC · 20/8 = 14 · 20/8 = 35 cm, contradicting the marked 26 cm. The additive shortcut only coincides with the correct answer when k = 1.",
+    "true_answer": "35 cm"
+  },
+  "source": {
+    "source_id": "forja-corpus/triangle-similarity-scale-factor",
+    "version_date": "2025-07-20",
+    "license": "CC-BY-4.0",
+    "excerpt": "If two triangles are similar, the ratios of the lengths of corresponding sides are all equal to a single constant, the scale factor k. Each side of the second triangle is obtained by MULTIPLYING the corresponding side of the first by k, never by adding a fixed length: side' = k · side, where k = (a corresponding side of the second) / (its corresponding side in the first).",
+    "relevance": "Names the exact step the author got wrong: EF must be BC multiplied by k = DE/AB = 20/8, not BC plus the difference DE − AB. Multiplicative, not additive."
+  }
+}

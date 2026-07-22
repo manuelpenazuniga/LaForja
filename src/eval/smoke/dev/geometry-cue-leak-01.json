@@ -1,0 +1,24 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
+  "id": "geometry-cue-leak-01",
+  "author_labeled": true,
+  "split": "dev",
+  "category": "cue_leak",
+  "discipline": "geometry",
+  "stem": "What is the sum of the interior angles of a regular hexagon, in degrees?",
+  "options": [
+    "720 degrees, obtained from the standard interior-angle-sum formula (n − 2) × 180 with n = 6",
+    "360",
+    "1080",
+    "540"
+  ],
+  "correct_key": "A",
+  "author_rationale": "For a convex n-gon the interior angles sum to (n − 2) × 180. For a hexagon n = 6, so the sum is (6 − 2) × 180 = 720 degrees. The mathematics is sound; 720 is genuinely correct.",
+  "intended_defect": {
+    "type": "cue_leak",
+    "description": "The correct option (A) is conspicuously longer than the other three and is the only one that spells out the formula and the substitution. A test-wise student can pick it on length and elaboration alone, without doing the geometry.",
+    "expected_finding": "Flag that the correct answer is given away by a length/elaboration cue: option A is a full sentence with the worked formula while the distractors are bare numbers. The stem and underlying computation are otherwise correct — the defect is the answer-key tell, not the math."
+  },
+  "source": null
+}

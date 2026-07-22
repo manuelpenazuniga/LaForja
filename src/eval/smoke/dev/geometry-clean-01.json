@@ -1,0 +1,15 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
+  "id": "geometry-clean-01",
+  "author_labeled": true,
+  "split": "dev",
+  "category": "clean",
+  "discipline": "geometry",
+  "stem": "A triangle has a base of 12 cm and a corresponding height of 5 cm. What is the area of the triangle, in square centimeters?",
+  "options": ["30", "60", "17", "34"],
+  "correct_key": "A",
+  "author_rationale": "Triangle area = 1/2 × base × height = 1/2 × 12 × 5 = 30 cm². The stem states the base and its corresponding perpendicular height explicitly, so there is exactly one correct value. Distractor 60 forgets the 1/2 factor; 17 = 12 + 5 adds base and height; 34 = 2 × (12 + 5) treats them as rectangle sides.",
+  "intended_defect": null,
+  "source": null
+}

@@ -1,0 +1,15 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
+  "id": "triangle-similarity-clean-01",
+  "author_labeled": true,
+  "split": "dev",
+  "category": "clean",
+  "discipline": "triangle-similarity",
+  "stem": "Triangle PQR is similar to triangle STU, with P corresponding to S, Q to T, and R to U. Side PQ = 9 cm corresponds to side ST = 15 cm. If QR = 12 cm, what is the length of TU?",
+  "options": ["20 cm", "18 cm", "24 cm", "16 cm"],
+  "correct_key": "A",
+  "author_rationale": "The correspondence is explicitly stated, so QR corresponds to TU. The scale factor from the first triangle to the second is k = ST/PQ = 15/9 = 5/3. Therefore TU = QR · (15/9) = 12 · 5/3 = 20 cm.",
+  "intended_defect": null,
+  "source": null
+}

@@ -1,0 +1,25 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
+  "id": "triangle-similarity-cue-leak-01",
+  "author_labeled": true,
+  "split": "dev",
+  "category": "cue_leak",
+  "discipline": "triangle-similarity",
+  "stem": "Triangle ABC has side lengths 7, 24, and 25. Triangle DEF has side lengths 14, 48, and 50. Which statement about the two triangles is correct?",
+  "options": [
+    "They are similar because all three pairs of corresponding sides are in the same constant ratio of 1 to 2, which satisfies the side-side-side (SSS) similarity criterion.",
+    "They are not similar.",
+    "They are congruent.",
+    "They are similar by AA only."
+  ],
+  "correct_key": "A",
+  "author_rationale": "Sorting both triangles gives 7, 24, 25 and 14, 48, 50. Every ratio equals 1/2 (7/14 = 24/48 = 25/50), so the triangles are similar by SSS with scale factor 1/2. The marked key A is genuinely correct.",
+  "intended_defect": {
+    "type": "cue_leak",
+    "description": "The correct option A is conspicuously longer and more detailed than the three terse distractors, so its length alone signals the key regardless of the geometry.",
+    "expected_finding": "A reviewer should flag that option length leaks the answer: the correct choice is a full explanatory sentence while every distractor is a short phrase. The underlying SSS similarity (k = 1/2) is otherwise sound.",
+    "true_answer": null
+  },
+  "source": null
+}

@@ -1,0 +1,20 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
+  "id": "triangle-similarity-ambiguous-01",
+  "author_labeled": true,
+  "split": "holdout",
+  "category": "ambiguous",
+  "discipline": "triangle-similarity",
+  "stem": "Two triangles are similar. The first triangle has sides of length 6 cm and 10 cm. In the second triangle, the side that corresponds to one of those two sides measures 15 cm. What is the length of the other listed side in the second triangle?",
+  "options": ["25 cm", "9 cm", "18 cm", "21 cm"],
+  "correct_key": "A",
+  "author_rationale": "The author assumed the 15 cm side corresponds to the 6 cm side, giving scale factor k = 15/6, so the side corresponding to 10 cm is 10 · 15/6 = 25 cm.",
+  "intended_defect": {
+    "type": "ambiguity",
+    "description": "The stem never states which side of the first triangle the 15 cm side corresponds to, so the vertex correspondence is undetermined and two readings are equally defensible.",
+    "expected_finding": "Reading A = '15 cm corresponds to 6 cm' → k = 15/6, other side = 10 · 15/6 = 25 cm. Reading B = '15 cm corresponds to 10 cm' → k = 15/10, other side = 6 · 15/10 = 9 cm. The two readings yield 25 cm and 9 cm, both present among the options, so the ambiguity attack is valid.",
+    "true_answer": null
+  },
+  "source": null
+}

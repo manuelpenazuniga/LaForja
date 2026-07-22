@@ -18,14 +18,16 @@ curriculum or one test, and no official taxonomy is referenced.
 
 ## Composition (doc §8)
 
-16 original items, all team-authored, all CC-BY:
+28 original items, all team-authored, all CC-BY. The original 16 are probability;
+a balanced 12-item block adds statistics, triangle-similarity and geometry (one
+item per category per discipline):
 
 | Category | Count | What it measures |
 |---|---|---|
-| `clean` | 4 | **False positives** — a finding here is a false alarm |
-| `ambiguous` | 4 | Two readings ⇒ two different answers |
-| `factual_error` | 4 | The marked answer is wrong; a licensed source is attached |
-| `cue_leak` | 4 | Length/lexical cue or weak (implausible) distractors |
+| `clean` | 7 | **False positives** — a finding here is a false alarm |
+| `ambiguous` | 7 | Two readings ⇒ two different answers |
+| `factual_error` | 7 | The marked answer is wrong; a licensed source is attached |
+| `cue_leak` | 7 | Length/lexical cue or weak (implausible) distractors |
 
 ## Split
 
@@ -34,8 +36,8 @@ curriculum or one test, and no official taxonomy is referenced.
 
 ## Status
 
-☑ All 16 items authored — 4 per category, split 2 `dev` + 2 `holdout` each
-(8 dev / 8 holdout). `tests/smokeSet.test.ts` enforces that composition.
+☑ All 28 items authored — 7 per category, split 14 `dev` / 14 `holdout`.
+`tests/smokeSet.test.ts` enforces that composition.
 
 ☑ **Arithmetic cross-checked by the bounded solver.** Every labeled answer that the
 solver can express is recomputed in `tests/smokeArithmetic.test.ts`. This is an
@@ -68,7 +70,7 @@ threshold or the stopword list to make a fixture pass.
 
 ## Licensing (doc §9)
 
-Every file carries `_license` and `_attribution`. All 16 items are **originals
+Every file carries `_license` and `_attribution`. All 28 items are **originals
 authored by the team**, published under CC-BY. No third-party item text is
 reproduced and no external taxonomy is republished.
 

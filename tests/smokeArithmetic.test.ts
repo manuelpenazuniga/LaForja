@@ -23,6 +23,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { solveProbability, type ProbabilityProblem } from '@/solver/probability';
+import { solve, type Problem } from '@/solver';
+
+import statsFactual from '@/eval/smoke/holdout/statistics-factual-error-01.json';
+import geomFactual from '@/eval/smoke/holdout/geometry-factual-error-01.json';
+import triFactual from '@/eval/smoke/holdout/triangle-similarity-factual-error-01.json';
 
 import clean001 from '@/eval/smoke/dev/clean-001.json';
 import clean002 from '@/eval/smoke/holdout/clean-002.json';
@@ -218,4 +223,72 @@ describe('smoke set arithmetic — the limits of this check', () => {
     // every number in the set was machine-verified. Two were not.
     expect(NOT_MACHINE_CHECKABLE).toHaveLength(2);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Multi-discipline factual_error items — verified against the bounded solver
+// DISPATCHER (src/solver, solve()), which routes on Problem.discipline. Same
+// contract as the probability block above: the true_answer is exactly what the
+// solver computes, and the marked key is a different (wrong) option. Options may
+// carry a unit ("35 cm"), so the comparison is on the numeric part only.
+// ---------------------------------------------------------------------------
+
+/** The solver's answer as a plain number (exact fraction or published decimal). */
+function solvedNumber(problem: Problem): number {
+  const result = solve(problem);
+  expect(result.supported).toBe(true);
+  if (result.value !== undefined) return result.value.numerator / result.value.denominator;
+  expect(result.decimal).toBeDefined();
+  return result.decimal as number;
+}
+
+/** Numeric part of an answer string: "35 cm" -> 35, "1/3" -> 0.333…, "27" -> 27. */
+function numericValue(answer: string): number {
+  const cleaned = answer.trim();
+  const fraction = /^(-?\d+)\s*\/\s*(\d+)/.exec(cleaned);
+  if (fraction) return Number(fraction[1]) / Number(fraction[2]);
+  const decimal = /-?\d+(?:\.\d+)?/.exec(cleaned);
+  expect(decimal, `no number in ${answer}`).not.toBeNull();
+  return Number(decimal?.[0]);
+}
+
+function markedText(item: { options: string[]; correct_key: string }): string {
+  const index = item.correct_key.charCodeAt(0) - 'A'.charCodeAt(0);
+  const option = item.options[index];
+  expect(option).toBeDefined();
+  return option as string;
+}
+
+describe('smoke set arithmetic — multi-discipline factual_error (solver dispatcher)', () => {
+  const cases: { label: string; item: { options: string[]; correct_key: string; intended_defect: { true_answer: string } }; problem: Problem }[] = [
+    {
+      label: 'statistics-factual-error-01: pop_variance 8, marked sample-variance 10 is wrong',
+      item: statsFactual as never,
+      problem: { discipline: 'statistics', kind: 'pop_variance', params: { data: '2,4,6,8,10' } },
+    },
+    {
+      label: 'geometry-factual-error-01: triangle area 27, marked 54 (no ½) is wrong',
+      item: geomFactual as never,
+      problem: { discipline: 'geometry', kind: 'area_triangle', params: { base: 9, height: 6 } },
+    },
+    {
+      label: 'triangle-similarity-factual-error-01: missing side 35, marked additive 26 is wrong',
+      item: triFactual as never,
+      problem: {
+        discipline: 'triangle-similarity',
+        kind: 'similarity_missing_side',
+        params: { known_side_1: 8, known_side_2: 20, target_side_1: 14 },
+      },
+    },
+  ];
+
+  for (const { label, item, problem } of cases) {
+    it(label, () => {
+      const truth = solvedNumber(problem);
+      // Both halves must hold: the labeled truth IS the solver's answer, and the
+      // marked key is a DIFFERENT number (a genuinely defective item).
+      expect(numericValue(item.intended_defect.true_answer)).toBeCloseTo(truth, 6);
+      expect(numericValue(markedText(item))).not.toBeCloseTo(truth, 6);
+    });
+  }
 });

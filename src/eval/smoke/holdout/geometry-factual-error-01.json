@@ -1,0 +1,26 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
+  "id": "geometry-factual-error-01",
+  "author_labeled": true,
+  "split": "holdout",
+  "category": "factual_error",
+  "discipline": "geometry",
+  "stem": "A triangular sail has a base of 9 meters and a corresponding height of 6 meters. What is the area of the sail, in square meters?",
+  "options": ["27", "54", "45", "18"],
+  "correct_key": "B",
+  "author_rationale": "The author computed base × height = 9 × 6 = 54 and marked 54 m². That is WRONG: it is the area of the enclosing parallelogram, not the triangle. The author forgot the factor of one-half in the triangle-area formula.",
+  "intended_defect": {
+    "type": "factual_error",
+    "description": "The marked key (54) omits the 1/2 factor in the triangle area formula. The stem is unambiguous — a base and its corresponding perpendicular height are given — so the error is purely one of calculation, not interpretation.",
+    "expected_finding": "The bounded solver computes area = 1/2 × base × height = 1/2 × 9 × 6 = 27 m², contradicting the marked 54. The marked value is exactly double the true area because the 1/2 factor was dropped.",
+    "true_answer": "27"
+  },
+  "source": {
+    "source_id": "forja-corpus/triangle-area-formula",
+    "version_date": "2025-07-20",
+    "license": "CC-BY-4.0",
+    "excerpt": "The area of a triangle equals one half the product of a base and its corresponding height: A = 1/2 × b × h. The product b × h alone gives the area of the parallelogram spanned by the base and height, which is twice the triangle's area.",
+    "relevance": "Identifies exactly the step the author dropped: multiplying by the 1/2 factor. The marked 54 = 9 × 6 is the parallelogram area; the triangle area is 1/2 of that, 27."
+  }
+}

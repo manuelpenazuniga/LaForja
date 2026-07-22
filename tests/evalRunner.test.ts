@@ -1360,7 +1360,7 @@ describe('runConfig', () => {
 describe('DEFAULT_EVAL_DEPS', () => {
   it('loads and validates the labeled smoke items off disk', async () => {
     const holdout = await DEFAULT_EVAL_DEPS.loadSmokeItems('holdout');
-    expect(holdout).toHaveLength(8);
+    expect(holdout).toHaveLength(14);
     for (const item of holdout) {
       expect(item.split).toBe('holdout');
       expect(SmokeItemSchema.safeParse(item).success).toBe(true);

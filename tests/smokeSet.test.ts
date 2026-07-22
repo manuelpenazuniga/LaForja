@@ -3,8 +3,10 @@
  *
  * OWNER: Claude (fixtures + structure). This suite reads the ACTUAL JSON files
  * from disk, not an in-memory fixture, because its job is to keep the claim in
- * doc §8 honest: 16 author-labeled items, 4 per category, split 8 dev / 8
- * holdout, every factual_error backed by a licensed source.
+ * doc §8 honest: 28 author-labeled items, 7 per category, split 14 dev / 14
+ * holdout, every factual_error backed by a licensed source. (The original 16
+ * were probability; a balanced 12-item block added statistics, triangle-
+ * similarity and geometry — one item per category per discipline.)
  *
  * Those numbers get quoted in the README and the submission. If someone adds,
  * drops or miscategorises an item, this suite fails — that is the point.
@@ -21,9 +23,9 @@ import { SMOKE_CATEGORIES, SmokeItemSchema, type SmokeCategory } from '@/eval/ty
 const SMOKE_DIR = fileURLToPath(new URL('../src/eval/smoke', import.meta.url));
 const SPLITS = ['dev', 'holdout'] as const;
 
-const EXPECTED_TOTAL = 16;
-const EXPECTED_PER_CATEGORY = 4;
-const EXPECTED_PER_SPLIT = 8;
+const EXPECTED_TOTAL = 28;
+const EXPECTED_PER_CATEGORY = 7;
+const EXPECTED_PER_SPLIT = 14;
 
 interface LoadedFile {
   split: (typeof SPLITS)[number];

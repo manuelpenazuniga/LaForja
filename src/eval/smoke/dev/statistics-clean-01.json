@@ -1,0 +1,15 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
+  "id": "statistics-clean-01",
+  "author_labeled": true,
+  "split": "dev",
+  "category": "clean",
+  "discipline": "statistics",
+  "stem": "A student's five quiz scores are 5, 7, 7, 9, 12. What is the arithmetic mean of the five scores?",
+  "options": ["8", "7", "7.5", "9"],
+  "correct_key": "A",
+  "author_rationale": "The mean is the sum divided by the count: (5 + 7 + 7 + 9 + 12) / 5 = 40 / 5 = 8. The stem asks explicitly for the arithmetic mean over the five listed values, so there is a single defensible reading and a single correct answer.",
+  "intended_defect": null,
+  "source": null
+}

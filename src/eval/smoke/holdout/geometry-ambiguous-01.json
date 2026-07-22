@@ -1,0 +1,19 @@
+{
+  "_license": "CC-BY-4.0",
+  "_attribution": "LA FORJA team (Manuel Peña Zúñiga). Original item authored by the team.",
+  "id": "geometry-ambiguous-01",
+  "author_labeled": true,
+  "split": "holdout",
+  "category": "ambiguous",
+  "discipline": "geometry",
+  "stem": "In a right triangle, two of the sides measure 6 cm and 8 cm. What is the length of the remaining side, in centimeters?",
+  "options": ["10", "5.29", "14", "7"],
+  "correct_key": "A",
+  "author_rationale": "The author had both 6 and 8 as the legs in mind, giving a hypotenuse of √(6² + 8²) = √100 = 10 cm.",
+  "intended_defect": {
+    "type": "ambiguity",
+    "description": "The stem never says whether the 8 cm side is a leg or the hypotenuse, so the 'remaining side' is not determined. Two readings are both defensible for a right triangle with two known sides.",
+    "expected_finding": "Reading A = both 6 and 8 are legs → remaining side is the hypotenuse = √(36 + 64) = √100 = 10. Reading B = 8 is the hypotenuse and 6 is a leg → remaining side is the other leg = √(64 − 36) = √28 ≈ 5.29. The two answers differ and both appear among the options, so the ambiguity attack is valid."
+  },
+  "source": null
+}
