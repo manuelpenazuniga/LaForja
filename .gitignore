@@ -47,3 +47,7 @@ docs/
 .claude/
 .codex/
 .agents/
+.continue/
+.kiro/
+.trae/
+skills-lock.json
