@@ -1481,29 +1481,31 @@ export default function StudioClient({
             </p>
 
             {session && session.demoItems.length > 1 ? (
-              <label className="field field--topic">
+              <div className="topic-picker">
                 <span className="field__label">
-                  <span>Topic</span>
-                  <span>switch the demo discipline — starts a fresh attempt</span>
+                  <span>Pick your arena</span>
+                  <span>switching topics starts a fresh attempt</span>
                 </span>
-                <select
-                  className="select"
-                  value={item.discipline ?? ''}
-                  disabled={busy !== null}
-                  onChange={(event) =>
-                    selectDemoDiscipline(DisciplineIdSchema.parse(event.target.value))
-                  }
-                  aria-label="Choose the demo discipline"
-                >
+                <div className="topic-picker__row" role="radiogroup" aria-label="Demo topic">
                   {session.demoItems.map((demo) =>
                     demo.discipline ? (
-                      <option key={demo.discipline} value={demo.discipline}>
-                        {disciplineLabel(demo.discipline)}
-                      </option>
+                      <button
+                        key={demo.discipline}
+                        type="button"
+                        role="radio"
+                        aria-checked={item.discipline === demo.discipline}
+                        className="topic"
+                        data-active={item.discipline === demo.discipline ? 'true' : 'false'}
+                        disabled={busy !== null}
+                        onClick={() => selectDemoDiscipline(demo.discipline as DisciplineId)}
+                      >
+                        <TopicGlyph discipline={demo.discipline} />
+                        <span className="topic__name">{disciplineLabel(demo.discipline)}</span>
+                      </button>
                     ) : null,
                   )}
-                </select>
-              </label>
+                </div>
+              </div>
             ) : null}
 
             <div className="panel__body form-grid">
@@ -1604,6 +1606,8 @@ export default function StudioClient({
             </div>
           </section>
 
+          <StepArrow label="run the gauntlet" live={panelPhase.gauntlet === 'now'} />
+
           {/* ---------------------------------------------------- 02 gauntlet */}
           <section className="panel" id="gauntlet" data-step={panelPhase.gauntlet}>
             <div className="panel__head">
@@ -1637,6 +1641,11 @@ export default function StudioClient({
           </section>
 
           {/* -------------------------------------------- 03 counterexample */}
+          <StepArrow
+            label="a finding is accepted"
+            live={panelPhase.counterexample === 'now'}
+          />
+
           <section
             className="panel panel--fracture"
             id="counterexample"
@@ -1697,6 +1706,8 @@ export default function StudioClient({
               ) : null}
             </div>
           </section>
+
+          <StepArrow label="the fracture forces a fix" live={panelPhase.repair === 'now'} />
 
           {/* ------------------------------------------------------ 04 repair */}
           <section className="panel" id="repair" data-step={panelPhase.repair}>
@@ -1770,6 +1781,11 @@ export default function StudioClient({
             </div>
           </section>
 
+          <StepArrow
+            label="one request re-runs everything"
+            live={panelPhase.rerun === 'now'}
+          />
+
           {/* ------------------------------------------------- 05 history re-run */}
           <section className="panel" id="rerun" data-step={panelPhase.rerun}>
             <div className="panel__head">
@@ -1831,6 +1847,11 @@ export default function StudioClient({
               })}
             </div>
           </section>
+
+          <StepArrow
+            label="a clean history opens the defense"
+            live={panelPhase.defense === 'now'}
+          />
 
           {/* ----------------------------------------------------- 06 defense */}
           <section className="panel" id="defense" data-step={panelPhase.defense}>
@@ -1921,6 +1942,11 @@ export default function StudioClient({
               <RubricCard rubric={rubric} />
             </div>
           </section>
+
+          <StepArrow
+            label="a passed defense publishes"
+            live={panelPhase.passport === 'now'}
+          />
 
           {/* --------------------------------------------------- 07 passport */}
           <section className="panel" id="passport" data-step={panelPhase.passport}>
@@ -2031,6 +2057,68 @@ export default function StudioClient({
 // ---------------------------------------------------------------------------
 // Presentational sub-components
 // ---------------------------------------------------------------------------
+
+/**
+ * The arrow between two sheet panels: it names the event that moves the item
+ * from one step to the next, and lights up when that move is the current one.
+ */
+function StepArrow({ label, live }: { label: string; live: boolean }) {
+  return (
+    <div className="flow-arrow" data-live={live ? 'true' : 'false'} aria-hidden="true">
+      <span className="flow-arrow__line" />
+      <span className="flow-arrow__label">{label}</span>
+      <span className="flow-arrow__head" />
+    </div>
+  );
+}
+
+/** Small stroke glyph per demo discipline for the topic picker. */
+function TopicGlyph({ discipline }: { discipline: DisciplineId }) {
+  const common = {
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.8,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    'aria-hidden': true,
+  } as const;
+  if (discipline === 'probability') {
+    return (
+      <svg {...common}>
+        <rect x="4" y="4" width="16" height="16" rx="4" />
+        <circle cx="9" cy="9" r="1.1" fill="currentColor" stroke="none" />
+        <circle cx="15" cy="15" r="1.1" fill="currentColor" stroke="none" />
+        <circle cx="15" cy="9" r="1.1" fill="currentColor" stroke="none" />
+        <circle cx="9" cy="15" r="1.1" fill="currentColor" stroke="none" />
+      </svg>
+    );
+  }
+  if (discipline === 'statistics') {
+    return (
+      <svg {...common}>
+        <path d="M4 20h16" />
+        <path d="M7 20v-6" />
+        <path d="M12 20V9" />
+        <path d="M17 20V5" />
+      </svg>
+    );
+  }
+  if (discipline === 'triangle-similarity') {
+    return (
+      <svg {...common}>
+        <path d="M4 19h9L4 8v11z" />
+        <path d="M13 19h7l-7-8.5V19z" opacity="0.55" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <circle cx="10" cy="14" r="6" />
+      <path d="M13 4l7 3-3 7" />
+    </svg>
+  );
+}
 
 function LanePanel({
   spec,
