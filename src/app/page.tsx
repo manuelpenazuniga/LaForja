@@ -3,11 +3,11 @@
  *
  * OWNER: Claude (presentation only — static server component).
  *
- * This page explains the project and routes visitors to the studio at /studio.
- * It calls no API and holds no state. Every claim on it obeys the language rule:
- * present tense only for what runs today; every model-backed stage is "next".
- * The guarantee sentence is the single authorized rendering and must not be
- * paraphrased.
+ * This page tells the story and routes visitors to the studio at /studio and
+ * the longer read at /about. It calls no API and holds no state. Every claim
+ * obeys the language rule: present tense only for what runs today; every
+ * model-backed stage is marked as gated on a runtime key. The guarantee
+ * sentence is the single authorized rendering and must not be paraphrased.
  */
 import Link from 'next/link';
 
@@ -33,58 +33,41 @@ const STATIONS: Station[] = [
   {
     code: 'FORGE',
     title: 'Start with a broken problem',
-    copy: 'Load the demo challenge: a team-authored probability item with a deliberate defect. Repair-first — your first move is never an empty form.',
+    copy: 'You load a team-authored item with a deliberate defect hidden in it. Repair-first: your first move is never an empty form.',
     status: 'today',
   },
   {
     code: 'GAUNTLET',
     title: 'Send it into the gauntlet',
-    copy: 'Three concurrent AI reviewers and a deterministic cue probe attack the item under explicit evidence contracts. No reviewer verdict is final on its own.',
+    copy: 'Three AI reviewers and a deterministic probe attack the item at the same time, each bound to an evidence contract. A claim without evidence never counts.',
     status: 'gated',
     statusNote: 'the deterministic probe runs without a key',
   },
   {
     code: 'FRACTURE',
     title: 'Face the counterexample',
-    copy: 'An ambiguity claim counts only when two readings of your stem force two different answers. Not an opinion — a construction anyone can re-execute.',
+    copy: 'The strongest finding is not an opinion — it is two honest readings of your stem that force two different answers, shown so you can re-execute them yourself.',
     status: 'gated',
   },
   {
     code: 'HAMMER',
     title: 'Repair it — version 2',
-    copy: 'A repair never overwrites: it creates a new version, and the full check history re-runs against it before anything else happens.',
+    copy: 'You rewrite the stem so only one reading survives. A repair never overwrites: version 1 stays on record, and the full check history re-runs against version 2.',
     status: 'today',
     statusNote: 're-judging semantic checks needs the key',
   },
   {
     code: 'PROOF',
     title: 'Defend it in writing',
-    copy: 'Two written questions scored against an explicit three-dimension rubric, with quoted evidence for every score. The defense is yours, not the model’s.',
+    copy: 'Fixing it is not enough — you show you understand why it was broken. Two written questions, scored on a three-part rubric with quoted evidence for every score.',
     status: 'gated',
   },
   {
     code: 'STAMP',
     title: 'Publish with a passport',
-    copy: 'The item ships with an auditable record: accepted attacks, re-run results by class, the discipline verdict with its citation, the rubric, every version.',
+    copy: 'The surviving item ships with its diploma: every attack, every re-run, the verdicts, the rubric, every version. Auditable by anyone.',
     status: 'today',
   },
-];
-
-const RUNS_TODAY: string[] = [
-  'Isolated demo sessions — random pseudonyms, auto-reset, zero PII',
-  'The 12-transition item lifecycle — every state change goes through one reducer',
-  'A bounded probability solver returning exact reduced fractions with a trace',
-  'The deterministic cue probe at its published thresholds',
-  'The fail-closed history re-run: inconclusive never counts as a pass',
-  'Repair as a new immutable version, and the frozen, auditable passport',
-];
-
-const KEY_GATED: string[] = [
-  'Live calls by the three reviewers under their evidence contracts',
-  'The separate adjudication step that accepts, rejects or abstains',
-  'Written-defense question generation and rubric scoring',
-  'Re-adjudication of semantic judgments on each new version',
-  'The reproducible smoke eval — it has produced no artifacts yet',
 ];
 
 function ShieldIcon() {
@@ -132,9 +115,10 @@ export default function LandingPage() {
           LA FORJA
         </Link>
         <nav className="lp-nav__links" aria-label="Landing sections">
+          <a href="#why">Why</a>
           <a href="#how">How it works</a>
           <a href="#promises">The promises</a>
-          <a href="#today">What runs today</a>
+          <Link href="/about">About</Link>
         </nav>
         <Link className="lp-btn lp-btn--brand lp-nav__cta" href="/studio">
           Enter the studio
@@ -153,10 +137,9 @@ export default function LandingPage() {
           is <em>not enough</em>.
         </h1>
         <p className="lp-hero__sub">
-          You author a multiple-choice math problem. The studio is built to attack
-          it with AI reviewers, accept only evidence-backed counterexamples, force
-          a repair, re-run the full history, score your written defense — and only
-          then publish it with a passport that records the whole fight.
+          Here you don&rsquo;t answer math problems — you build one, watch AI
+          reviewers attack it with evidence, repair it, defend it in writing, and
+          publish it with a passport that records the whole fight.
         </p>
         <div className="lp-hero__actions">
           <Link className="lp-btn lp-btn--brand lp-btn--lg" href="/studio">
@@ -167,9 +150,9 @@ export default function LandingPage() {
           </a>
         </div>
         <p className="lp-hero__status">
-          The studio, the seeded item, versioning and passports run today. The
-          reviewer stages are implemented and verified offline; their live model
-          calls are gated on a server API key, and the studio labels their
+          The studio, the seeded challenges, versioning and passports run today.
+          The reviewer stages are implemented and verified offline; their live
+          model calls are gated on a server API key, and the studio labels their
           availability instead of faking results.
         </p>
 
@@ -209,38 +192,77 @@ export default function LandingPage() {
         </figure>
       </section>
 
-      {/* ------------------------------------------------------- how it works */}
-      <section className="lp-section" id="how">
-        <div className="lp-section__head">
-          <h2 className="lp-h2">Six stations, one fight</h2>
-          <p className="lp-section__lede">
-            Publication is earned, never granted. An item moves through the studio
-            in this order, and each station leaves a record the passport keeps.
+      {/* ------------------------------------------------------- the story */}
+      <section className="lp-section" id="why">
+        <div className="lp-story">
+          <h2 className="lp-h2">Why a forge?</h2>
+          <p>
+            Every AI tutor on the market optimizes the same thing: getting you to
+            the answer, faster. And it works — you never get stuck any more. But
+            the same shortcut that unblocks you also lets you step around the
+            struggle that builds real understanding. You reach the answer without
+            ever owning the reasoning.
+          </p>
+          <blockquote className="lp-pull">
+            If students use AI as an answer machine, they will not learn. The
+            tool is not the problem. The direction of the interaction is.
+          </blockquote>
+          <p>
+            LA FORJA flips that direction. Here the AI never answers for you: you
+            author the problem, the AI attacks it with evidence, and the repair
+            and the defense are yours. Writing a good question demands deeper
+            understanding than answering one — you must master the content,
+            anticipate how others go wrong, and design every wrong option around
+            a mistake a real student would make. That is builder thinking,
+            applied to mathematics.
+          </p>
+          <p className="lp-story__cta">
+            <Link href="/about">Read why we built this →</Link>
           </p>
         </div>
-        <ol className="lp-stations">
+      </section>
+
+      {/* ----------------------------------------------- how it works: flow */}
+      <section className="lp-section lp-section--tint" id="how">
+        <div className="lp-section__head">
+          <h2 className="lp-h2">One item, six stations</h2>
+          <p className="lp-section__lede">
+            Publication is earned, never granted. Follow one problem through the
+            forge, top to bottom — each station leaves a record the passport
+            keeps.
+          </p>
+        </div>
+        <ol className="lp-flow">
           {STATIONS.map((station, index) => (
-            <li className="lp-station" key={station.code}>
-              <div className="lp-station__top">
-                <span className="lp-station__num" aria-hidden="true">
-                  {String(index + 1).padStart(2, '0')}
-                </span>
-                <span className="lp-station__code">{station.code}</span>
-                <span
-                  className={
-                    station.status === 'today'
-                      ? 'lp-chip lp-chip--today'
-                      : 'lp-chip lp-chip--gated'
-                  }
-                >
-                  {station.status === 'today' ? 'runs today' : 'needs an API key'}
-                </span>
+            <li className="lp-flow__step" key={station.code}>
+              <div className="lp-flow__marker" aria-hidden="true">
+                <span className="lp-flow__num">{index + 1}</span>
+                {index < STATIONS.length - 1 ? (
+                  <>
+                    <span className="lp-flow__link" />
+                    <span className="lp-flow__head" />
+                  </>
+                ) : null}
               </div>
-              <h3 className="lp-station__title">{station.title}</h3>
-              <p className="lp-station__copy">{station.copy}</p>
-              {station.statusNote ? (
-                <p className="lp-station__note">{station.statusNote}</p>
-              ) : null}
+              <div className="lp-flow__card">
+                <div className="lp-flow__top">
+                  <span className="lp-flow__code">{station.code}</span>
+                  <span
+                    className={
+                      station.status === 'today'
+                        ? 'lp-chip lp-chip--today'
+                        : 'lp-chip lp-chip--gated'
+                    }
+                  >
+                    {station.status === 'today' ? 'runs today' : 'needs an API key'}
+                  </span>
+                </div>
+                <h3 className="lp-flow__title">{station.title}</h3>
+                <p className="lp-flow__copy">{station.copy}</p>
+                {station.statusNote ? (
+                  <p className="lp-flow__note">{station.statusNote}</p>
+                ) : null}
+              </div>
             </li>
           ))}
         </ol>
@@ -288,36 +310,21 @@ export default function LandingPage() {
         </blockquote>
       </section>
 
-      {/* ---------------------------------------------- runs today / key-gated */}
+      {/* -------------------------------------------------- honesty, briefly */}
       <section className="lp-section" id="today">
-        <div className="lp-section__head">
-          <h2 className="lp-h2">Stated plainly</h2>
-          <p className="lp-section__lede">
-            The whole pipeline is implemented and pinned by offline tests against a
-            fake model transport. No runtime API key has been available to this
-            build, so no model-backed stage is presented as having run live, and
-            the eval directory holds no artifact. This is the exact boundary.
-          </p>
-        </div>
-        <div className="lp-status">
-          <div className="lp-status__col">
-            <h3 className="lp-status__title lp-status__title--today">Runs today</h3>
-            <ul>
-              {RUNS_TODAY.map((entry) => (
-                <li key={entry}>{entry}</li>
-              ))}
-            </ul>
+        <div className="lp-strip">
+          <div>
+            <h2 className="lp-h2">Stated plainly</h2>
+            <p className="lp-section__lede">
+              The whole pipeline is implemented and pinned by offline tests. No
+              runtime API key has been available to this build, so no model-backed
+              stage is presented as having run live, and the eval directory holds
+              no artifact.
+            </p>
           </div>
-          <div className="lp-status__col">
-            <h3 className="lp-status__title lp-status__title--next">
-              Gated on a runtime API key
-            </h3>
-            <ul>
-              {KEY_GATED.map((entry) => (
-                <li key={entry}>{entry}</li>
-              ))}
-            </ul>
-          </div>
+          <Link className="lp-btn lp-btn--outline" href="/about#boundary">
+            Read the exact boundary
+          </Link>
         </div>
       </section>
 
@@ -348,7 +355,8 @@ export default function LandingPage() {
             <h3>Exam-agnostic</h3>
             <p>
               Designed against the constraints of a real high-stakes exam, built to
-              be exam-agnostic. The demo discipline is probability.
+              be exam-agnostic. The demo topics are probability, statistics and
+              geometry.
             </p>
           </div>
           <div className="lp-principle">
@@ -360,6 +368,22 @@ export default function LandingPage() {
             </p>
           </div>
         </div>
+      </section>
+
+      {/* ----------------------------------------------------- about teaser */}
+      <section className="lp-section lp-about-teaser">
+        <blockquote className="lp-flame">
+          <p>
+            &ldquo;Defending a solution in front of peers who genuinely wanted to
+            find the flaw remains one of the richest learning experiences of my
+            life. That forum is gone. LA FORJA is our attempt to relight that
+            flame.&rdquo;
+          </p>
+          <cite>— from the founder&rsquo;s story</cite>
+        </blockquote>
+        <Link className="lp-btn lp-btn--outline" href="/about">
+          About the project
+        </Link>
       </section>
 
       {/* -------------------------------------------------------- final CTA */}
@@ -376,6 +400,7 @@ export default function LandingPage() {
 
       <footer className="lp-footer">
         <span>LA FORJA</span>
+        <Link href="/about">About</Link>
         <span>Built for OpenAI Build Week · Education track</span>
         <span>All items team-authored · CC-BY</span>
       </footer>
